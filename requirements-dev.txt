@@ -1,0 +1,12 @@
+-r requirements.txt
+
+pytest>=8.3
+
+# Só para scripts/prova_layout.py, que mede o PDF gerado contra o da banca.
+# Fora da imagem de produção: o Chromium do playwright pesa ~400 MB e o PDF de
+# produção é feito pelo Gotenberg, via webhook do n8n.
+playwright>=1.49
+
+# Leitura das peças e entrevistas de referência nos scripts de auditoria.
+pdfplumber>=0.11
+python-docx>=1.1

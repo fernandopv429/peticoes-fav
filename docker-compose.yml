@@ -1,0 +1,23 @@
+# Para rodar a imagem localmente igual à de produção:
+#     docker compose up --build
+#
+# No Coolify o caminho recomendado é o build pack "Dockerfile" (ver DEPLOY.md).
+# Este arquivo também funciona lá, no build pack "Docker Compose", se você
+# preferir declarar o serviço por aqui.
+services:
+  peticoes:
+    build: .
+    image: fav/peticoes:local
+    ports:
+      - "8100:8100"
+    environment:
+      # Vêm do .env ao lado deste arquivo. Em produção, do painel do Coolify.
+      API_KEY: ${API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
+      CCT_API_URL: ${CCT_API_URL:-https://ccts.nexusdevhub.com}
+      CCT_API_KEY: ${CCT_API_KEY}
+      N8N_PDF_WEBHOOK: ${N8N_PDF_WEBHOOK:-https://n8n.nexusdevhub.com/webhook/fav-html-para-pdf}
+      POCKETBASE_URL: ${POCKETBASE_URL:-https://db.nexusdevhub.com}
+      POCKETBASE_TOKEN: ${POCKETBASE_TOKEN}
+    restart: unless-stopped

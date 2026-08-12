@@ -1,0 +1,11 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.mcp.json
+
+# saídas geradas (peças, PDFs, casos) — nunca versionar: contêm dados de cliente
+data/casos/
+data/saida/
+*.pdf
