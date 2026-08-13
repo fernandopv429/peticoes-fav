@@ -6,7 +6,7 @@ FAV Advogados. Orquestrado pelo n8n (Nexus), com o miolo determinístico em Pyth
 Substitui/consolida o que hoje está espalhado entre os apps Base44
 `6a5a44d24aa52c9fbdd61b1a` (HTML→DOCX) e `6a6526d39fede1a2a7a8c5a4` (docxtemplater).
 
-> **Subir no Coolify e ligar no n8n: [`DEPLOY.md`](DEPLOY.md).**
+> **Referência da API: [`API.md`](API.md).**  ·  **Subir no Coolify e ligar no n8n: [`DEPLOY.md`](DEPLOY.md).**
 > Este arquivo registra *por que* o motor é assim; o outro é o operacional.
 
 ---
