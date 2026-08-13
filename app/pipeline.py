@@ -100,12 +100,36 @@ def gerar(caso: Caso, *, codigo: str, municipio: Optional[str] = None,
 
     enriquecimento = None
     if consultar_cct:
+        cct_mod.municipios_sem_cobertura.discard(municipio or "")
         enriquecimento = cct_mod.enriquecer(caso, municipio=municipio)
+        # A convenção vale para a base territorial inteira. Se o índice só tem
+        # o município-sede, a busca foi refeita sem o filtro — e isso precisa
+        # aparecer, porque a cláusula citada pode ser da sede e não daqui.
+        if municipio and municipio in cct_mod.municipios_sem_cobertura:
+            trace.append(f"CCT: '{municipio}' não indexado — cláusulas obtidas "
+                         "sem filtro de município (CONFERIR base territorial)")
         if enriquecimento.erro:
             trace.append(f"CCT indisponível ({enriquecimento.erro}) — percentuais no default")
         else:
             for campo, origem in enriquecimento.aplicados.items():
                 trace.append(f"{campo}: {origem}")
+
+    # O formulário assinado não coleta salário — a especialista deduz o piso da
+    # categoria. TODA a peça escala a partir dele, então o piso vem casado com o
+    # CARGO na tabela da CCT; sem casamento confiável não se arbitra nada e o
+    # gate barra, que é melhor do que uma peça inteira calculada errado.
+    if caso.salario <= 0 and enriquecimento and enriquecimento.categoria:
+        achado = cct_mod.piso_do_cargo(enriquecimento.categoria, caso.funcao,
+                                       caso.rescisao, municipio)
+        if achado:
+            caso.salario, cargo = achado
+            trace.append(f"salário: piso da CCT para '{cargo}' ({caso.salario}) "
+                         "— não informado na entrevista, CONFERIR no holerite")
+        else:
+            trace.append(f"salário: NÃO informado e sem piso para a função "
+                         f"'{caso.funcao}' na CCT — o gate vai barrar")
+    elif caso.salario <= 0:
+        trace.append("salário: NÃO informado e sem CCT — o gate vai barrar")
 
     verbas = calcular(caso)
 

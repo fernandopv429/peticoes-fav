@@ -122,6 +122,62 @@ quantidade. O número tem que ser defensável a partir do que o cliente disse.
 """
 
 
+# Como a banca argumenta em cada categoria. Extraído das iniciais reais, não
+# inventado — a tese e o vocabulário mudam com o sindicato, e o texto genérico
+# saía com cara de peça de vigilante em processo de porteiro.
+ORIENTACAO_POR_CATEGORIA: dict[str, str] = {
+    "vigilancia": """\
+CATEGORIA: VIGILÂNCIA (SEEVISSP) — vigilante patrimonial.
+
+A tese de função é DESVIO, não acúmulo: o vigilante é desviado para atividade
+estranha à segurança (conferência de carga, prevenção de perdas, esteira), e o
+desvio se pede em 50%, com base na cláusula de INIBIÇÃO AO DESVIO FUNCIONAL.
+Ao descrever as atividades, mostre que são alheias à vigilância — é isso que
+sustenta o desvio em vez do acúmulo.
+
+Cabem aqui, e só aqui: periculosidade da atividade de vigilância, o descanso de
+10 minutos previsto na CCT da categoria, e a gratificação de função do condutor.""",
+
+    "asseio_conservacao": """\
+CATEGORIA: ASSEIO E CONSERVAÇÃO (SIEMACO) — porteiro, controlador de acesso,
+auxiliar de limpeza em contrato de conservação predial.
+
+A tese de função é ACÚMULO, não desvio, e se pede em 20% do salário contratual
+por mês laborado: o porteiro SOMA às suas atribuições outras (rondas, revistas,
+cadastros, controle de acesso, limpeza de áreas) sem contraprestação. Ao
+descrever, deixe claro que as atividades eram exercidas SIMULTANEAMENTE às de
+porteiro — é a simultaneidade que caracteriza o acúmulo.
+
+Registre que o reclamante informou a situação à reclamada de forma reiterada e
+ainda assim nada recebeu: é o elemento que afasta a alegação de eventualidade.
+
+NÃO cabem aqui: periculosidade da vigilância, descanso de 10 minutos da CCT de
+vigilância, nem gratificação de condutor. Citar qualquer um denuncia peça de
+vigilante reaproveitada.
+
+Ao narrar a jornada, seja específico sobre a extensão habitual do turno e sobre
+o intervalo concedido apenas parcialmente. Vale consignar que outras escalas e
+horários poderão ser apurados em audiência.""",
+
+    "terceirizados": """\
+CATEGORIA: TERCEIRIZADOS (SINDEEPRES) — porteiro, controlador de acesso e afins
+contratados por empresa de locação de mão de obra ou gestão de RH.
+
+Tese de função: ACÚMULO, em 20%, pelas atribuições somadas à contratada.
+
+A terceirização é o eixo da peça: a responsabilidade da tomadora (Súmula 331,
+IV e VI, do TST) não é capítulo acessório, e a descrição dos fatos deve deixar
+claro que o serviço era prestado nas dependências e sob a organização da
+tomadora.
+
+NÃO cabem periculosidade de vigilância nem o descanso de 10 minutos.""",
+}
+
+
+def _orientacao_categoria(caso: Caso) -> str:
+    return ORIENTACAO_POR_CATEGORIA.get(caso.categoria or "", "")
+
+
 def _campos_narrativos(caso: Caso) -> dict[str, str]:
     """Campo do template -> o que a IA deve escrever ali. Só o que o caso sustenta."""
     campos = {
@@ -283,6 +339,10 @@ def redigir(caso: Caso, verbas: list[Verba], clausulas: Optional[list[Clausula]]
         system=[
             {"type": "text", "text": IDENTIDADE, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": METODO_ESTIMATIVA.format(criterio=_CRITERIO[caso.criterio_horas])},
+            # Depois do prefixo cacheado, senão cada categoria invalidaria o cache
+            # da anterior. Vazio quando a categoria não foi resolvida — sem
+            # categoria confiável, melhor sem orientação do que com a errada.
+            {"type": "text", "text": _orientacao_categoria(caso) or "(categoria não identificada)"},
         ],
         output_config={
             "format": {"type": "json_schema", "schema": _schema(caso)},

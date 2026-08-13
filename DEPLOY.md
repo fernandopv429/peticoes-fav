@@ -120,24 +120,55 @@ confira a `API_KEY`.
 
 No nó *Gerar peça (Python)*:
 
-- **URL**: `https://peticoes.nexusdevhub.com/peca/gerar`
+- **URL**: `https://peticoes.nexusdevhub.com/peca/da-entrevista`
 - **Headers**: `X-API-Key` = o valor de `API_KEY` (guarde como credencial do
   n8n, não em texto no nó)
 - **Timeout**: `600000` (10 min). Uma peça completa leva 2–4 min — uma chamada
   ao Opus mais três renderizações no Gotenberg. Com o padrão a execução morre
   no meio e o n8n reporta falha de uma peça que ficou pronta.
 
-Corpo:
+Corpo — o registro do Base44 **como veio**, sem traduzir nada:
 
 ```json
 {
-  "codigo": "{{ $json.codigo }}",
-  "caso": {{ JSON.stringify($json.caso) }},
-  "municipio": "{{ $json.municipio }}",
+  "entrevista": {{ JSON.stringify($json) }},
   "redigir_ia": true,
   "gerar_pdf": true,
   "persistir": true
 }
+```
+
+Não monte o `caso` no workflow. A tradução formulário → caso tem regra jurídica
+dentro — desvio x acúmulo depende da função, o adicional noturno sai da
+sobreposição do horário com a faixa 22h–5h, as faixas ("5 a 6", "R$ 180 a
+R$ 200") têm critério próprio de arredondamento — e ela mora em
+`app/entrevista.py`, com teste. Reescrita em expressão de nó, desanda calada.
+
+Os dois endpoints existem:
+
+| endpoint | recebe | quando usar |
+|---|---|---|
+| `/peca/da-entrevista` | o formulário cru | **o webhook** — é o caminho normal |
+| `/peca/gerar` | um `Caso` já montado | reprocessar caso corrigido à mão |
+
+O `codigo` sai do `id` do registro quando você não manda um: reenviar o mesmo
+webhook atualiza a peça em vez de criar uma segunda.
+
+**Salário.** O formulário assinado não coleta salário. Sem `SALARIO` no
+registro, o serviço usa o piso da CCT **casado com o cargo** — para "Vigilante",
+R$ 2.148,22 da tabela de salários normativos. Se a função não casar com nenhum
+cargo da convenção, ele NÃO arbitra: deixa o gate barrar. É a decisão certa,
+porque toda a peça escala a partir do salário.
+
+**`campos_ausentes` na resposta.** Lista o que faltou no formulário e o efeito
+de cada falta. Vale mandar para a especialista junto com a peça:
+
+```json
+"campos_ausentes": [
+  {"campo": "SALARIO", "efeito": "usa o piso da CCT da categoria; confira contra o holerite"},
+  {"campo": "VAL_CONDUCAO", "efeito": "sem tarifa, o vale-transporte das folgas não é pedido"},
+  {"campo": "tem_adic_noturno", "efeito": "inferido do horário: SIM"}
+]
 ```
 
 O PDF vai para o PocketBase; o `registro_id` da resposta é como buscá-lo. Se

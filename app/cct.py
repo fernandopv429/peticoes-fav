@@ -125,10 +125,33 @@ def resolver_categoria(caso: Caso) -> Resolucao:
     return Resolucao(None, "indefinida", ambigua=funcao_e_ambigua(caso.funcao))
 
 
+# Município que filtrou tudo: registrado aqui para o trace, sem estado global
+# escondido — quem chama decide se reporta.
+municipios_sem_cobertura: set[str] = set()
+
+
 def consultar(pergunta: str, *, categoria: Optional[str] = None,
               data_fato: Optional[date] = None, municipio: Optional[str] = None,
               limite: int = 6, timeout: float = 60.0) -> list[Clausula]:
-    """Busca híbrida (categoria + vigência + município + similaridade)."""
+    """Busca híbrida (categoria + vigência + município + similaridade).
+
+    Se o filtro de município zerar o resultado, REPETE sem ele. A base do
+    SIEMACO só está indexada para "São Paulo": com `municipio='Cajamar'` ela
+    devolvia zero cláusulas, e a peça saía com todos os percentuais no default,
+    sem citar nenhuma cláusula — em silêncio, como se a CCT nada previsse. A
+    convenção vale para a base territorial inteira; resultado vazio ali é falha
+    de cobertura do índice, não ausência de norma.
+    """
+    achadas = _consultar(pergunta, categoria, data_fato, municipio, limite, timeout)
+    if not achadas and municipio:
+        achadas = _consultar(pergunta, categoria, data_fato, None, limite, timeout)
+        if achadas:
+            municipios_sem_cobertura.add(municipio)
+    return achadas
+
+
+def _consultar(pergunta: str, categoria: Optional[str], data_fato: Optional[date],
+               municipio: Optional[str], limite: int, timeout: float) -> list[Clausula]:
     if not CHAVE:
         raise CctIndisponivel("CCT_API_KEY não configurada")
     corpo = {"pergunta": pergunta, "limite": limite}
@@ -266,8 +289,13 @@ def pisos_da_categoria(categoria: Categoria, data_fato: date,
     return sorted(valores)
 
 
-# O texto diz "no valor facial de R$ 39,00" — mas a CCT de 2024 omite o "R$".
-_VALOR_FACIAL = re.compile(r"valor facial de\s*(?:R\$\s*)?([\d.]{0,7}\d,\d\d)", re.I)
+# Cada convenção declara o valor do benefício à sua maneira:
+#   SEEVISSP: "no valor facial de R$ 39,00"  (a de 2024 omite o "R$")
+#   SIEMACO : "TÍQUETE REFEIÇÃO/por dia ANO 2026 VALOR EM REAIS R$ 21,80"
+# O desconto do empregado vem logo depois ("Desconto de até R$ 1,46"); quem o
+# descarta é a faixa de plausibilidade do benefício diário, não o padrão.
+_VALOR_FACIAL = re.compile(
+    r"(?:valor facial de|valor em reais)\s*(?:R\$\s*)?([\d.]{0,7}\d,\d\d)", re.I)
 
 
 def _mais_recente(cs: list[Clausula], titulo_alvo: str) -> list[Clausula]:
@@ -317,10 +345,108 @@ def clausula_da_multa_convencional(categoria: Categoria, data_fato: date,
                        municipio=municipio, limite=6)
     except CctIndisponivel:
         return None
-    for c in _mais_recente(cs, r"penas cominatorias|multa convencional"):
+    # Cada convenção batiza a cláusula à sua maneira: o SEEVISSP chama de
+    # "PENAS COMINATÓRIAS", o SIEMACO de "PRAZOS E MULTAS" (cl. 66ª, a que as
+    # iniciais reais citam). Filtro estreito devolvia None para SIEMACO inteiro.
+    for c in _mais_recente(cs, r"penas cominatorias|multa convencional|"
+                               r"prazos e multas|multas?$|^multas?\b"):
         numero = numero_da_clausula(c.ref, c.titulo)
         if numero:
             return numero
+    return None
+
+
+# Piso nunca é menor que o mínimo nacional (art. 7º, IV, CF). Serve de trava
+# contra extrair gratificação como se fosse piso: a cláusula de salário
+# normativo traz as duas colunas lado a lado.
+SALARIO_MINIMO = Decimal("1518.00")
+
+# Cada convenção tabula os pisos de um jeito:
+#   SEEVISSP: "I- Vigilante R$2.148,22  II- Vigilante Condutor R$2.148,22"
+#   SIEMACO : "RECEPCIONISTA R$ 1.995,25PORTEIRO/CONTROLADOR DE ACESSO R$ 2.162,60"
+# O segundo não tem numeral nem separador — o cargo seguinte cola no valor
+# anterior. Por isso a leitura é por POSIÇÃO: o cargo é o texto entre o fim de
+# um valor e o começo do próximo.
+_LINHA_CARGO = re.compile(
+    r"(?:[IVXL]+\s*[-–]\s*)([A-Za-zÀ-ÿ/\s\.\(\)0-9]{4,70}?)\s*R\$\s*([\d.]+,\d\d)")
+_VALOR_NA_TABELA = re.compile(r"R\$\s*([\d.]+,\d\d)")
+
+
+def _cargos_por_posicao(texto: str) -> list[tuple[str, Decimal]]:
+    """Pares (cargo, valor) lendo o rótulo que ANTECEDE cada valor."""
+    pares: list[tuple[str, Decimal]] = []
+    fim_anterior = 0
+    for m in _VALOR_NA_TABELA.finditer(texto):
+        rotulo = texto[fim_anterior:m.start()]
+        fim_anterior = m.end()
+        # só a última "frase" antes do valor, sem numeral romano nem pontuação
+        rotulo = re.split(r"[.;:,]|\bR\$", rotulo)[-1]
+        rotulo = re.sub(r"^\s*[IVXL]+\s*[-–]\s*", "", rotulo.strip())
+        if 3 <= len(rotulo) <= 70:
+            pares.append((rotulo, Decimal(m.group(1).replace(".", "").replace(",", "."))))
+    return pares
+
+
+def _cargo_normalizado(s: str) -> str:
+    """'Vigilante /Líder' e 'Vigilante/Líder' viram a mesma coisa.
+
+    A tabela da CCT tem espaçamento irregular em volta da barra; comparar sem
+    normalizar fazia o cargo do formulário não casar com o da convenção."""
+    return re.sub(r"\s*/\s*", "/", re.sub(r"\s+", " ", _sem_acento(s))).strip()
+
+
+def piso_do_cargo(categoria: Categoria, funcao: str, data_fato: date,
+                  municipio: Optional[str] = None) -> Optional[tuple[Decimal, str]]:
+    """Piso do CARGO na tabela de salários normativos -> (valor, 'Vigilante').
+
+    Pegar o menor valor da cláusula não funciona: ela lista dezenas de cargos
+    com pisos e gratificações misturados, e o menor era R$ 1.209,00 — uma
+    gratificação, abaixo até do mínimo nacional. Aplicado como salário, errava
+    a peça inteira em 44%, porque tudo escala a partir dele.
+
+    Devolve None quando não há casamento confiável. É de propósito: salário
+    errado é pior que peça barrada — o gate reclama e alguém confere o holerite.
+    """
+    try:
+        cs = consultar("piso salarial da categoria, salário normativo por cargo",
+                       categoria=categoria, data_fato=data_fato,
+                       municipio=municipio, limite=6)
+    except CctIndisponivel:
+        return None
+
+    alvo = _cargo_normalizado(funcao or "")
+    if not alvo:
+        return None
+
+    candidatos: list[tuple[str, Decimal]] = []
+    for c in _mais_recente(cs, r"piso|normativ|profissiona|reajuste"):
+        brutos = [(cargo, Decimal(v.replace(".", "").replace(",", ".")))
+                  for cargo, v in _LINHA_CARGO.findall(c.conteudo)]
+        brutos += _cargos_por_posicao(c.conteudo)
+        # Teto além do piso: acima disso é parcela de negociação individual
+        # ("percebam até o valor de R$ 8.026,80"), não piso de cargo.
+        candidatos += [(_cargo_normalizado(cargo), v) for cargo, v in brutos
+                       if SALARIO_MINIMO <= v <= Decimal("8000")]
+        if candidatos:
+            break                     # só a convenção mais recente que tenha tabela
+
+    if not candidatos:
+        return None
+
+    exatos = [c for c in candidatos if c[0] == alvo]
+    if exatos:
+        return exatos[0][1], exatos[0][0]
+
+    # A CCT agrupa cargos equivalentes numa linha só:
+    # "PORTEIRO/CONTROLADOR DE ACESSO/FISCAL DE PISO R$ 2.162,60". Casar com
+    # qualquer um dos componentes é legítimo — todos têm o mesmo piso.
+    componentes = [c for c in candidatos if alvo in c[0].split("/")]
+    if componentes:
+        return componentes[0][1], componentes[0][0]
+
+    # Deliberadamente SEM casamento por prefixo: "Zelador" pegava "Zeladoria em
+    # Prédios Públicos", que é outro cargo com outro piso. Sem correspondência,
+    # devolve None e o gate barra — salário errado é pior que peça barrada.
     return None
 
 

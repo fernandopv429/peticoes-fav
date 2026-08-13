@@ -75,7 +75,7 @@ def _horario_e_noturno(horario: Optional[str]) -> bool:
     return any(a < d and c < b for a, b in turno for c, d in noite)
 
 
-def _valor_brl(txt: Any) -> Optional[Decimal]:
+def valor_brl(txt: Any) -> Optional[Decimal]:
     """'R$ 2.148,22' -> Decimal('2148.22')"""
     if txt is None:
         return None
@@ -124,6 +124,58 @@ def _municipio_uf(texto: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     return (m.group(1).strip(), m.group(2)) if m else (None, None)
 
 
+def _vazio(v: Any) -> bool:
+    return v is None or (isinstance(v, str) and not v.strip())
+
+
+def campos_ausentes(e: dict[str, Any]) -> list[dict[str, str]]:
+    """Campos do formulário que, faltando, MUDAM a peça — e o que acontece então.
+
+    Não é validação: nada aqui impede a geração. É o aviso que volta para a
+    especialista saber o que conferir antes de protocolar, em vez de descobrir
+    lendo a peça. Campo que só afeta redação não entra: a lista precisa ser
+    curta para ser lida.
+    """
+    faltas: list[dict[str, str]] = []
+
+    def falta(campo: str, efeito: str) -> None:
+        faltas.append({"campo": campo, "efeito": efeito})
+
+    if _vazio(e.get("DATA_ADMISSAO")) or _vazio(e.get("DATA_RESCISAO")):
+        falta("DATA_ADMISSAO/DATA_RESCISAO",
+              "bloqueia: sem o período não há avos, FGTS nem projeção")
+    if _vazio(e.get("SALARIO")):
+        falta("SALARIO", "usa o piso da CCT da categoria; confira contra o holerite")
+    if _vazio(e.get("RECL1_NOME")):
+        falta("RECL1_NOME", "bloqueia: sem empregadora não há polo passivo")
+    if _vazio(e.get("RECL1_CNPJ")):
+        falta("RECL1_CNPJ",
+              "a categoria cai para a função, menos confiável que o CNAE")
+    if not _vazio(e.get("RECL2_NOME")) and _vazio(e.get("RECL2_ENDCOMPL")):
+        falta("RECL2_ENDCOMPL",
+              "a competência (art. 651) é o local da prestação, que sai daqui")
+
+    if e.get("folgas_trabalhadas"):
+        if _vazio(e.get("FT_QTD_MEDIA")):
+            falta("FT_QTD_MEDIA", "sem quantidade, as folgas trabalhadas não entram")
+        if _vazio(e.get("VAL_FT")):
+            falta("VAL_FT", "sem valor, não há pedido de integração do pago por fora")
+        if _vazio(e.get("VAL_CONDUCAO")):
+            falta("VAL_CONDUCAO",
+                  "sem tarifa, o vale-transporte das folgas não é pedido "
+                  "(a CCT obriga o benefício mas não declara valor)")
+
+    if "tem_adic_noturno" not in e:
+        falta("tem_adic_noturno",
+              f"inferido do horário: {'SIM' if _horario_e_noturno(e.get('JORNADA_HORARIO')) else 'não'}")
+    if e.get("gratificacao") and _vazio(e.get("gratificacao_qual")):
+        falta("gratificacao_qual",
+              "sem o texto não dá para separar gratificação de função de "
+              "bonificação de assiduidade — são verbas diferentes")
+
+    return faltas
+
+
 def de_entrevista(e: dict[str, Any], *, salario: Optional[Decimal] = None) -> Caso:
     """`Entrevista` -> `Caso`.
 
@@ -157,7 +209,7 @@ def de_entrevista(e: dict[str, Any], *, salario: Optional[Decimal] = None) -> Ca
         # o formulário passou a ter campo SALARIO próprio; o parâmetro só
         # sobrepõe quando informado (ex.: piso deduzido da CCT)
         salario=(salario if salario is not None
-                 else (_valor_brl(e.get("SALARIO")) or Decimal("0"))),
+                 else (valor_brl(e.get("SALARIO")) or Decimal("0"))),
         reclamadas=reclamadas,
         municipio_prestacao=municipio, uf_prestacao=uf,
         endereco_prestacao=" - ".join(
@@ -205,16 +257,16 @@ def de_entrevista(e: dict[str, Any], *, salario: Optional[Decimal] = None) -> Ca
         tem_assiduidade=(bool(e.get("assiduidade"))
                          or (bool(e.get("gratificacao"))
                              and _e_assiduidade(e.get("gratificacao_qual")))),
-        assiduidade_prometida=(_valor_brl(e.get("assiduidade_prometido"))
+        assiduidade_prometida=(valor_brl(e.get("assiduidade_prometido"))
                                or _valores_prometido_pago(e.get("gratificacao_qual"))[0]),
-        assiduidade_paga=(_valor_brl(e.get("assiduidade_pago"))
+        assiduidade_paga=(valor_brl(e.get("assiduidade_pago"))
                           or _valores_prometido_pago(e.get("gratificacao_qual"))[1]),
         tem_dano_moral=True,   # tese padrão da banca; a IA ancora no fato concreto
 
         folgas_trabalhadas_mes=_media_faixa(e.get("FT_QTD_MEDIA")),
-        val_folgas_mensal=_valor_brl(e.get("VAL_FT")),
+        val_folgas_mensal=valor_brl(e.get("VAL_FT")),
         ft_forma_pagamento=e.get("ft_pagamento"),
         # valores diários dos benefícios, quando a entrevista os traz
-        valor_alimentacao_dia=_valor_brl(e.get("VALOR_AUX_ALIMENTACAO")),
-        valor_transporte_dia=_valor_brl(e.get("VAL_CONDUCAO")),
+        valor_alimentacao_dia=valor_brl(e.get("VALOR_AUX_ALIMENTACAO")),
+        valor_transporte_dia=valor_brl(e.get("VAL_CONDUCAO")),
     )

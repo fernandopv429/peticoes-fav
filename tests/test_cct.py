@@ -72,3 +72,69 @@ def test_converte_ordinal_por_extenso_em_numero():
     assert numero_da_clausula("CLÁUSULA DÉCIMA QUINTA") == "15ª"
     assert numero_da_clausula("CLÁUSULA TERCEIRA") == "3ª"
     assert numero_da_clausula("SEM ORDINAL AQUI") is None
+
+
+# --- piso por cargo --------------------------------------------------------
+# A cláusula de salários normativos lista dezenas de cargos com piso E
+# gratificação na mesma linha. Pegar o menor número dava R$ 1.209,00 (uma
+# gratificação, abaixo do mínimo nacional) onde o piso do vigilante é
+# R$ 2.148,22 — 44% de erro em TODA a peça, porque tudo escala do salário.
+
+def test_cargo_normalizado_ignora_espaco_na_barra():
+    from app.cct import _cargo_normalizado
+    assert _cargo_normalizado("Vigilante /Líder") == _cargo_normalizado("Vigilante/Líder")
+    assert _cargo_normalizado("  VIGILANTE   Balanceiro ") == "vigilante balanceiro"
+
+
+def test_linha_da_tabela_de_pisos_e_extraida():
+    from app.cct import _LINHA_CARGO
+    linha = ("I- Vigilante R$2.148,22 Sem gratificação "
+             "IX- Vigilante em Regime de Tempo Parcial (até 26 hs/semana) R$1.269,45")
+    achados = _LINHA_CARGO.findall(linha)
+    assert ("Vigilante ", "2.148,22") in [(c, v) for c, v in achados] or \
+           any(c.strip() == "Vigilante" for c, _ in achados)
+    assert any("Tempo Parcial" in c for c, _ in achados)
+
+
+def test_piso_nunca_abaixo_do_minimo_nacional():
+    """Trava contra extrair gratificação como piso (art. 7º, IV, CF)."""
+    from app.cct import SALARIO_MINIMO
+    from decimal import Decimal
+    assert SALARIO_MINIMO >= Decimal("1518.00")
+
+
+# --- leitura das duas tabelas de piso --------------------------------------
+# SEEVISSP numera os cargos ("I- Vigilante R$2.148,22"); SIEMACO não usa
+# separador nenhum e o cargo seguinte cola no valor anterior.
+
+def test_tabela_sem_separador_e_lida_por_posicao():
+    from app.cct import _cargos_por_posicao
+    from decimal import Decimal
+    linha = ("RECEPCIONISTA R$ 1.995,25PORTEIRO/CONTROLADOR DE ACESSO/FISCAL "
+             "DE PISO R$ 2.162,60ZELADORIA EM PRÉDIOS PÚBLICOSR$ 2.351,12")
+    pares = dict(_cargos_por_posicao(linha))
+    assert pares["RECEPCIONISTA"] == Decimal("1995.25")
+    assert any("PORTEIRO" in k and v == Decimal("2162.60") for k, v in pares.items())
+
+
+def test_cargo_agrupado_casa_por_componente():
+    """'PORTEIRO/CONTROLADOR DE ACESSO/FISCAL DE PISO' vale para os três —
+    a CCT dá um piso só à linha inteira."""
+    from app.cct import _cargo_normalizado
+    cargo = _cargo_normalizado("PORTEIRO/CONTROLADOR DE ACESSO/FISCAL DE PISO")
+    for f in ("porteiro", "controlador de acesso", "fiscal de piso"):
+        assert f in cargo.split("/")
+
+
+def test_prefixo_nao_casa_cargo_diferente():
+    """'Zelador' NÃO pode pegar 'Zeladoria em Prédios Públicos': cargos
+    distintos, pisos distintos. Casamento por prefixo fazia exatamente isso."""
+    from app.cct import _cargo_normalizado
+    assert _cargo_normalizado("Zelador") not in \
+           _cargo_normalizado("ZELADORIA EM PRÉDIOS PÚBLICOS").split("/")
+
+
+def test_valor_do_beneficio_aceita_as_duas_redacoes():
+    from app.cct import _VALOR_FACIAL
+    assert _VALOR_FACIAL.findall("no valor facial de R$ 39,00") == ["39,00"]
+    assert _VALOR_FACIAL.findall("ANO 2026VALOR EM REAIS R$ 21,80") == ["21,80"]

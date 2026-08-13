@@ -1,0 +1,25 @@
+{
+  "codigo": "TESTE-001",
+  "municipio": "Itapecerica da Serra",
+  "redigir_ia": false, "gerar_pdf": false, "persistir": false,
+  "caso": {
+    "nome": "Marcos Moreira Paulo",
+    "funcao": "Vigilante",
+    "admissao": "2025-04-14",
+    "rescisao": "2025-12-07",
+    "modalidade": "sem_justa_causa",
+    "salario": "2148.22",
+    "escala": "12x36",
+    "jornada_horario": "das 19h às 7h",
+    "tem_adicional_noturno": true,
+    "folgas_trabalhadas_mes": "5.5",
+    "val_folgas_mensal": "180",
+    "tem_dano_moral": true,
+    "municipio_prestacao": "Itapecerica da Serra",
+    "uf_prestacao": "SP",
+    "reclamadas": [
+      {"razao_social": "VIGSEG VIGILANCIA E SEGURANCA DE VALORES LTDA", "cnpj": "04.542.518/0002-99"},
+      {"razao_social": "GLP RÉGIS", "cnpj": "46.652.606/0001-02", "tomadora": true}
+    ]
+  }
+}
