@@ -40,7 +40,34 @@ def preencher(html: str, campos: dict[str, str], flags: dict[str, bool]) -> str:
     html = resolver_flags(html, flags)
     html = _CAMPO.sub(lambda m: campos.get(m.group(1)) or MARCADOR.format(m.group(1)), html)
     html = _QUALQUER_TAG.sub("", html)      # flags órfãs, sem par
-    return _P_VAZIO.sub("", html)
+    return renumerar(_P_VAZIO.sub("", html))
+
+
+_OL = re.compile(r"<ol\b([^>]*)>(.*?)</ol>", re.S | re.I)
+_START = re.compile(r'\s*start\s*=\s*"[^"]*"', re.I)
+_LI = re.compile(r"<li\b", re.I)
+
+
+def renumerar(html: str) -> str:
+    """Renumera os parágrafos depois da poda das seções.
+
+    O modelo veio do Word com cada parágrafo numerado em seu próprio
+    `<ol start="N">`, de 2 a 81, chumbado. Podar um capítulo apagava aqueles
+    números e o documento saía com a sequência furada — na peça do MARCOS ia
+    1–6, 10–26, 29–53, 58–81, porque os capítulos de vale-transporte e outros
+    não entraram. O Word renumera sozinho; o HTML não.
+    """
+    contador = 0
+
+    def ajustar(m: re.Match) -> str:
+        nonlocal contador
+        atributos, miolo = _START.sub("", m.group(1)), m.group(2)
+        contador += 1
+        inicio = contador
+        contador += len(_LI.findall(miolo)) - 1     # <ol> com mais de um <li>
+        return f'<ol{atributos} start="{inicio}">{miolo}</ol>'
+
+    return _OL.sub(ajustar, html)
 
 
 # --- gate ------------------------------------------------------------------

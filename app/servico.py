@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Suba a cada mudança de contrato da API: é por `/health` que se sabe qual
 # build está no ar. Com a versão parada, um deploy que não aconteceu é
 # indistinguível de um que aconteceu.
-app = FastAPI(title="FAV — Gerador de Petições", version="0.5.0")
+app = FastAPI(title="FAV — Gerador de Petições", version="0.5.1")
 
 # Chave compartilhada com o n8n. O serviço fica numa URL pública do Coolify e
 # cada chamada gasta uma requisição Opus e grava dados de cliente no

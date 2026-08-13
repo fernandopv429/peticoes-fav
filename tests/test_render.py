@@ -89,3 +89,33 @@ def test_extrai_municipio_e_uf():
     assert _municipio_uf("Itapecerica da Serra/SP, CEP 06877-115") == ("Itapecerica da Serra", "SP")
     assert _municipio_uf("São Paulo/SP") == ("São Paulo", "SP")
     assert _municipio_uf(None) == (None, None)
+
+
+# --- renumeração após a poda ------------------------------------------------
+# O modelo veio do Word com cada parágrafo em seu próprio <ol start="N">, de 2 a
+# 81, chumbado. Podar um capítulo deixava buraco: a peça do MARCOS saiu 1-6,
+# 10-26, 29-53, 58-81. O Word renumera sozinho; o HTML não.
+
+def test_renumera_em_sequencia_apos_podar():
+    from app.render.preencher import preencher
+    html = ('<ol start="2"><li>a</li></ol>'
+            '{{#tem}}<ol start="3"><li>b</li></ol>{{/tem}}'
+            '{{#nao}}<ol start="4"><li>c</li></ol>{{/nao}}'
+            '<ol start="5"><li>d</li></ol>')
+    saida = preencher(html, {}, {"tem": True, "nao": False})
+    import re
+    assert re.findall(r'start="(\d+)"', saida) == ["1", "2", "3"]
+    assert "c" not in saida
+
+
+def test_renumeracao_conta_varios_li_no_mesmo_ol():
+    from app.render.preencher import renumerar
+    import re
+    html = '<ol start="9"><li>a</li><li>b</li></ol><ol start="40"><li>c</li></ol>'
+    assert re.findall(r'start="(\d+)"', renumerar(html)) == ["1", "3"]
+
+
+def test_renumeracao_preserva_outros_atributos():
+    from app.render.preencher import renumerar
+    saida = renumerar('<ol class="x" start="7" type="1"><li>a</li></ol>')
+    assert 'class="x"' in saida and 'type="1"' in saida and 'start="1"' in saida
