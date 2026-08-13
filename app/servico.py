@@ -11,10 +11,11 @@ import base64
 import logging
 import os
 import secrets
+import unicodedata
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from app import pdf as pdf_mod
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Suba a cada mudança de contrato da API: é por `/health` que se sabe qual
 # build está no ar. Com a versão parada, um deploy que não aconteceu é
 # indistinguível de um que aconteceu.
-app = FastAPI(title="FAV — Gerador de Petições", version="0.5.1")
+app = FastAPI(title="FAV — Gerador de Petições", version="0.6.0")
 
 # Chave compartilhada com o n8n. O serviço fica numa URL pública do Coolify e
 # cada chamada gasta uma requisição Opus e grava dados de cliente no
@@ -78,6 +79,50 @@ def health() -> dict[str, Any]:
             "autenticado": bool(API_KEY)}
 
 
+def _cabecalho_seguro(valor: Any) -> str:
+    """Cabeçalho HTTP só aceita latin-1, e alguns proxies só ASCII.
+
+    Transliterar em vez de substituir: com `errors="replace"`, "ordinário"
+    virava "ordin?rio". Sem tratamento nenhum, o UnicodeEncodeError derruba a
+    resposta inteira — some o PDF junto com o acento.
+    """
+    texto = unicodedata.normalize("NFKD", str(valor))
+    return "".join(c for c in texto if not unicodedata.combining(c)) \
+        .encode("ascii", "ignore").decode("ascii")
+
+
+def _entregar(request: Request, resposta: dict[str, Any],
+              pdf_bytes: Optional[bytes], codigo: str):
+    """JSON por padrão; o PDF cru quando o cliente pede `Accept: application/pdf`.
+
+    Devolver o PDF em base64 dentro do JSON obriga o n8n a decodificar num nó
+    Code e infla o corpo em ~33%. Com o binário, o nó HTTP já entrega um item
+    binário pronto para anexar ou salvar.
+
+    Os metadados que importam vão em cabeçalhos `X-`, senão trocar JSON por PDF
+    perderia o valor da causa, o gate e o id do registro.
+    """
+    if "application/pdf" not in request.headers.get("accept", ""):
+        return resposta
+
+    if not pdf_bytes:
+        # Sem PDF não há o que entregar: o gate barrou ou o Gotenberg falhou.
+        # 409 com o JSON explicando é mais útil que um 200 vazio.
+        raise HTTPException(409, {"erro": "PDF não gerado", **resposta})
+
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_cabecalho_seguro(codigo)}.pdf"',
+            "X-Status": _cabecalho_seguro(resposta.get("status", "")),
+            "X-Valor-Causa": _cabecalho_seguro(resposta.get("valor_causa", "")),
+            "X-Rito": _cabecalho_seguro(resposta.get("rito", "")),
+            "X-Registro-Id": _cabecalho_seguro(resposta.get("registro_id", "")),
+            "X-Campos-Ausentes": _cabecalho_seguro(
+                ",".join(f["campo"] for f in resposta.get("campos_ausentes", []))),
+        })
+
+
 class PedidoEntrevista(BaseModel):
     """O formulário do app Base44, cru, como o webhook o recebe.
 
@@ -106,7 +151,7 @@ class PedidoEntrevista(BaseModel):
 
 
 @app.post("/peca/da-entrevista", dependencies=[Depends(autorizar)])
-def peca_da_entrevista(p: PedidoEntrevista) -> dict[str, Any]:
+def peca_da_entrevista(p: PedidoEntrevista, request: Request):
     """Formulário do Base44 -> peça. É este que o webhook do n8n deve chamar."""
     e = p.entrevista
     if not e.get("RECL_NOME"):
@@ -122,7 +167,7 @@ def peca_da_entrevista(p: PedidoEntrevista) -> dict[str, Any]:
     # atualiza a peça em vez de criar uma segunda.
     codigo = p.codigo or e.get("id") or f"{e.get('RECL_CPF', 'SEM-CPF')}-{caso.rescisao}"
 
-    resposta = _gerar_e_entregar(
+    resposta, pdf_bytes = _gerar_e_entregar(
         caso, codigo=codigo, municipio=p.municipio or caso.municipio_prestacao,
         consultar_cct=p.consultar_cct, consultar_cnpj=p.consultar_cnpj,
         redigir_ia=p.redigir_ia, blocos=p.blocos,
@@ -132,23 +177,25 @@ def peca_da_entrevista(p: PedidoEntrevista) -> dict[str, Any]:
     # Devolve o que faltou no formulário — a especialista lê isto antes de
     # protocolar, em vez de descobrir procurando na peça.
     resposta["campos_ausentes"] = campos_ausentes(e)
-    return resposta
+    return _entregar(request, resposta, pdf_bytes, codigo)
 
 
 @app.post("/peca/gerar", dependencies=[Depends(autorizar)])
-def peca_gerar(p: PedidoGerar) -> dict[str, Any]:
-    return _gerar_e_entregar(
+def peca_gerar(p: PedidoGerar, request: Request):
+    resposta, pdf_bytes = _gerar_e_entregar(
         p.caso, codigo=p.codigo, municipio=p.municipio,
         consultar_cct=p.consultar_cct, consultar_cnpj=p.consultar_cnpj,
         redigir_ia=p.redigir_ia, blocos=p.blocos,
         gerar_pdf=p.gerar_pdf, persistir=p.persistir,
         incluir_pdf_base64=p.incluir_pdf_base64)
+    return _entregar(request, resposta, pdf_bytes, p.codigo)
 
 
 def _gerar_e_entregar(caso: Caso, *, codigo: str, municipio: Optional[str],
                       consultar_cct: bool, consultar_cnpj: bool, redigir_ia: bool,
                       blocos: Optional[dict[str, str]], gerar_pdf: bool,
-                      persistir: bool, incluir_pdf_base64: bool) -> dict[str, Any]:
+                      persistir: bool, incluir_pdf_base64: bool
+                      ) -> tuple[dict[str, Any], Optional[bytes]]:
     """Gerar + PDF + persistir. Um só caminho para os dois endpoints, para não
     haver rota que grava diferente da outra."""
     try:
@@ -189,7 +236,7 @@ def _gerar_e_entregar(caso: Caso, *, codigo: str, municipio: Optional[str],
             logger.warning("PocketBase indisponível: %s", e)
             resposta["persistencia_erro"] = str(e)
 
-    return resposta
+    return resposta, pdf_bytes
 
 
 @app.post("/peca/previa", response_class=HTMLResponse,

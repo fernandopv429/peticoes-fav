@@ -171,9 +171,25 @@ de cada falta. Vale mandar para a especialista junto com a peça:
 ]
 ```
 
-O PDF vai para o PocketBase; o `registro_id` da resposta é como buscá-lo. Se
-preferir recebê-lo direto no n8n, mande `"incluir_pdf_base64": true` — custa uns
-2 MB de payload por peça.
+**Para receber o PDF no n8n**, mande `Accept: application/pdf` no nó HTTP. A
+resposta vem como binário pronto para anexar ou salvar, sem nó Code para
+decodificar, e os metadados vêm em cabeçalhos:
+
+```
+Content-Disposition: attachment; filename="MARCOS.pdf"
+X-Status: redigido
+X-Valor-Causa: 68794.75
+X-Rito: ordinario
+X-Registro-Id: g2j23t041sysyu0
+X-Campos-Ausentes: SALARIO,VAL_CONDUCAO
+```
+
+Sem esse cabeçalho a resposta é JSON e o PDF vai só para o PocketBase — o
+`registro_id` é como buscá-lo. O `incluir_pdf_base64: true` ainda existe, mas
+infla o corpo em ~33% e obriga a decodificar: prefira o `Accept`.
+
+Se o gate barrar a peça não há PDF, e aí o `Accept: application/pdf` responde
+**409** com o JSON do problema, em vez de 200 com corpo vazio.
 
 ### Ler a resposta sem quebrar a execução
 

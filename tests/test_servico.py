@@ -57,3 +57,63 @@ def test_redigir_ia_vem_ligado_por_padrao():
     """O ponto do serviço é a IA redigir. Já saiu peça sem os capítulos
     narrativos porque o campo nem existia no PedidoGerar."""
     assert servico.PedidoGerar.model_fields["redigir_ia"].default is True
+
+
+# --- entrega do PDF ---------------------------------------------------------
+# Base64 dentro do JSON obriga o n8n a decodificar num nó Code e infla o corpo
+# em ~33%. Com `Accept: application/pdf` o nó HTTP já recebe binário.
+
+def _resp(pdf=b"%PDF-1.4 fake", **extra):
+    from unittest.mock import Mock
+    from app.servico import _entregar
+    corpo = {"status": "redigido", "valor_causa": "68794.75", "rito": "ordinário",
+             "registro_id": "abc123",
+             "campos_ausentes": [{"campo": "SALARIO", "efeito": "x"}], **extra}
+    req = Mock(); req.headers = {"accept": "application/pdf"}
+    return _entregar(req, corpo, pdf, "MARCOS")
+
+
+def test_sem_accept_pdf_continua_json():
+    from unittest.mock import Mock
+    from app.servico import _entregar
+    req = Mock(); req.headers = {"accept": "application/json"}
+    saida = _entregar(req, {"status": "redigido"}, b"%PDF", "X")
+    assert isinstance(saida, dict) and saida["status"] == "redigido"
+
+
+def test_accept_pdf_devolve_binario():
+    r = _resp()
+    assert r.media_type == "application/pdf"
+    assert r.body.startswith(b"%PDF")
+
+
+def test_metadados_vao_nos_cabecalhos():
+    """Trocar JSON por PDF não pode perder valor da causa nem o gate."""
+    h = _resp().headers
+    assert h["x-valor-causa"] == "68794.75"
+    assert h["x-status"] == "redigido"
+    assert h["x-registro-id"] == "abc123"
+    assert "SALARIO" in h["x-campos-ausentes"]
+    assert 'filename="MARCOS.pdf"' in h["content-disposition"]
+
+
+def test_cabecalho_aceita_nome_com_acento():
+    """Cabeçalho HTTP é latin-1; 'JOSÉ' cru derruba a resposta inteira."""
+    from app.servico import _cabecalho_seguro
+    assert _cabecalho_seguro("JOSÉ CARLOS").encode("latin-1")
+
+
+def test_sem_pdf_com_accept_pdf_e_409_e_nao_200_vazio():
+    import pytest as _pt
+    from fastapi import HTTPException
+    with _pt.raises(HTTPException) as e:
+        _resp(pdf=None)
+    assert e.value.status_code == 409
+    assert e.value.detail["erro"] == "PDF não gerado"
+
+
+def test_cabecalho_translitera_em_vez_de_trocar_por_interrogacao():
+    """"ordinário" virava "ordin?rio" com errors='replace'."""
+    from app.servico import _cabecalho_seguro
+    assert _cabecalho_seguro("ordinário") == "ordinario"
+    assert _cabecalho_seguro("JOSÉ CARLOS") == "JOSE CARLOS"
