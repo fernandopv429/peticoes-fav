@@ -12,13 +12,18 @@ Uma API FastAPI. Uma chamada `POST /peca/gerar` = uma petição.
 ```
 n8n  ──X-API-Key──▶  este serviço  ──▶  Claude (redação dos capítulos)
                           │            ──▶  ccts.nexusdevhub.com (cláusulas da CCT)
-                          │            ──▶  webhook do n8n ──▶ Gotenberg (HTML→PDF)
+                          │            ──▶  Gotenberg (HTML→PDF, 3 renderizações)
                           └──────────────▶  db.nexusdevhub.com (PocketBase: HTML + PDF)
 ```
 
-O Chromium **não** entra na imagem: quem converte para PDF é o Gotenberg, e a
-credencial Basic auth dele fica no n8n, não aqui. Por isso a imagem tem ~200 MB
-e o build leva ~15 s.
+O Chromium **não** entra na imagem: quem converte para PDF é o Gotenberg. Por
+isso a imagem tem ~200 MB e o build leva ~15 s.
+
+O Python fala com o Gotenberg **direto**. Antes passava pelo webhook do n8n só
+para guardar a Basic auth — e como cada peça faz três renderizações, eram seis
+saltos de rede por peça para esconder uma senha que `GOTENBERG_PASSWORD`
+esconde igual. Sem essa variável, ele volta a usar o webhook: a migração não
+quebra produção enquanto a credencial não estiver no painel.
 
 | | |
 |---|---|
@@ -73,6 +78,9 @@ e o build leva ~15 s.
    ANTHROPIC_MODEL=claude-opus-5
    CCT_API_URL=https://ccts.nexusdevhub.com
    CCT_API_KEY=
+   GOTENBERG_URL=http://72.60.61.18:3000
+   GOTENBERG_USER=
+   GOTENBERG_PASSWORD=
    N8N_PDF_WEBHOOK=https://n8n.nexusdevhub.com/webhook/fav-html-para-pdf
    POCKETBASE_URL=https://db.nexusdevhub.com
    POCKETBASE_TOKEN=
@@ -249,7 +257,8 @@ set -a && . ./.env && set +a && .venv/bin/python scripts/gerar_marcos.py --ia --
 | `401` vindo do n8n | header `X-API-Key` ausente ou com valor diferente do painel |
 | `"ia":false` no `/health` | `ANTHROPIC_API_KEY` não chegou ao container |
 | Peça sem cláusula de CCT | `"cct":false`, ou a categoria não foi resolvida — o `trace` da resposta diz por quê |
-| `pdf_erro` na resposta | o webhook do Gotenberg no n8n não respondeu; a peça em HTML está salva e dá para reconverter |
+| `pdf_erro` na resposta | o Gotenberg não respondeu; a peça em HTML está salva e dá para reconverter |
+| PDF em Letter, paginação errada | `paperWidth`/`paperHeight` ausentes — o padrão do Gotenberg é Letter, não A4 |
 | Build falha em `test -f templates/...` | os assets do timbrado não foram versionados. São eles que desenham o logo e a faixa do rodapé |
 | Timbrado errado nas páginas 2+ | `pypdf` não instalou. Sem ele o `pdf.py` cai num fallback silencioso e repete a capa em todas as páginas |
 | Execução do n8n morre aos 2 min | timeout do nó HTTP; suba para 600000 |

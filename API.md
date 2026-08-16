@@ -1,6 +1,6 @@
 # API — Gerador de Petições FAV
 
-`https://peticoes.nexusdevhub.com` · versão 0.6.0
+`https://peticoes.nexusdevhub.com` · versão 0.7.0
 
 Uma chamada = uma petição inicial trabalhista, do formulário assinado ao PDF.
 
@@ -57,7 +57,7 @@ curl -s https://peticoes.nexusdevhub.com/health
 ```json
 {
   "status": "ok",
-  "versao": "0.6.0",
+  "versao": "0.7.0",
   "ia": true,
   "cct": true,
   "pocketbase": true,
@@ -425,6 +425,12 @@ devolve 0 — não inventa quantidade.
 **Reflexos.** 34,75% no total: DSR 7,25%, aviso prévio 4%, 13º 6%, férias + 1/3
 7%, FGTS 7,5% e multa de 40% 3%. Verificado em seis rubricas independentes da
 peça real do caso MARCOS.
+
+**Conversão para PDF.** Três renderizações no Gotenberg — capa, miolo e a faixa
+do rodapé — montadas em um documento só. O Chromium aplica um header/footer
+único a todas as páginas, então a primeira página diferente do modelo Word exige
+renderizar duas vezes e intercalar. O papel é A4 explícito: o padrão do
+Gotenberg é Letter, e sem declarar a peça sai com paginação errada.
 
 **O gate.** Barra `{{}}` residual, JSON da IA vazando como texto, valor da causa
 divergindo da soma das verbas, teto de R$ 400.000, reflexo inconsistente,

@@ -42,9 +42,20 @@ import httpx
 
 WEBHOOK = os.environ.get(
     "N8N_PDF_WEBHOOK", "https://n8n.nexusdevhub.com/webhook/fav-html-para-pdf")
+
+# Caminho direto. Com credencial, o n8n sai do meio: cada peça faz TRÊS
+# renderizações, então eram seis saltos de rede por peça (Python -> n8n ->
+# Gotenberg e a volta, três vezes) só para esconder uma senha que a variável de
+# ambiente esconde igual. Sem credencial, cai no webhook do n8n.
+GOTENBERG_URL = os.environ.get("GOTENBERG_URL", "").rstrip("/")
+GOTENBERG_USER = os.environ.get("GOTENBERG_USER", "")
+GOTENBERG_SENHA = os.environ.get("GOTENBERG_PASSWORD", "")
 ASSETS = pathlib.Path(__file__).resolve().parent.parent / "templates" / "assets"
 
 # Margens do documento da especialista (pgMar em twips / 1440 = polegada)
+# A4 em polegadas, que é a unidade do Gotenberg.
+PAPEL_A4 = ("8.27", "11.7")
+
 MARGEM = {"top": "1.378", "bottom": "0.709", "left": "1.181", "right": "1.181"}
 
 class PdfIndisponivel(RuntimeError):
@@ -101,12 +112,59 @@ VAZIO = '<div style="font-size:8px;"></div>'
 
 def _render(html: str, cabecalho: str, rodape: str, nome: str, timeout: float,
             *, margens: dict[str, str] | None = None) -> bytes:
+    """Uma renderização: direto no Gotenberg quando há credencial, senão pelo n8n."""
+    if GOTENBERG_URL and GOTENBERG_USER:
+        return _render_gotenberg(html, cabecalho, rodape, timeout, margens or MARGEM)
+    return _render_n8n(html, cabecalho, rodape, nome, timeout, margens or MARGEM)
+
+
+def _render_gotenberg(html: str, cabecalho: str, rodape: str, timeout: float,
+                      margens: dict[str, str]) -> bytes:
+    """Os NOMES dos arquivos são o contrato do Gotenberg: ele só reconhece o
+    corpo como `index.html` e o timbrado como `header.html`/`footer.html`."""
+    arquivos = [
+        ("files", ("index.html", html.encode(), "text/html")),
+        ("files", ("header.html", cabecalho.encode(), "text/html")),
+        ("files", ("footer.html", rodape.encode(), "text/html")),
+    ]
+    dados = {
+        # A4 EXPLÍCITO: o padrão do Gotenberg é Letter (215,9 x 279,4 mm). Sem
+        # isto a peça saía com 18 páginas em vez de 16, e toda a paginação
+        # medida contra o documento da banca ia por água abaixo.
+        "paperWidth": PAPEL_A4[0], "paperHeight": PAPEL_A4[1],
+        "marginTop": margens["top"], "marginBottom": margens["bottom"],
+        "marginLeft": margens["left"], "marginRight": margens["right"],
+        # sem isto o Chromium descarta os fundos e o timbrado perde a faixa
+        "printBackground": "true",
+    }
+    try:
+        r = httpx.post(f"{GOTENBERG_URL}/forms/chromium/convert/html",
+                       files=arquivos, data=dados, timeout=timeout,
+                       auth=(GOTENBERG_USER, GOTENBERG_SENHA))
+    except httpx.HTTPError as e:
+        raise PdfIndisponivel(f"falha ao chamar o Gotenberg: {e}") from e
+    if r.status_code == 401:
+        raise PdfIndisponivel("Gotenberg recusou a credencial (401) — confira "
+                              "GOTENBERG_USER e GOTENBERG_PASSWORD")
+    if r.status_code != 200:
+        # O Gotenberg explica a falha em texto puro; repassar é melhor do que o
+        # "resposta não é PDF" genérico que o caminho pelo webhook produzia.
+        raise PdfIndisponivel(f"Gotenberg respondeu {r.status_code}: {r.text[:300]}")
+    if r.content[:4] != b"%PDF":
+        raise PdfIndisponivel(f"resposta não é PDF: {r.content[:200]!r}")
+    return r.content
+
+
+def _render_n8n(html: str, cabecalho: str, rodape: str, nome: str, timeout: float,
+                margens: dict[str, str]) -> bytes:
+    """Caminho antigo — rede de segurança enquanto a credencial do Gotenberg
+    não estiver no ambiente do serviço."""
     corpo = {
         "nome": nome,
         "index_html": base64.b64encode(html.encode()).decode(),
         "header_html": base64.b64encode(cabecalho.encode()).decode(),
         "footer_html": base64.b64encode(rodape.encode()).decode(),
-        "margens": margens or MARGEM,
+        "margens": margens,
     }
     try:
         r = httpx.post(WEBHOOK, json=corpo, timeout=timeout)
