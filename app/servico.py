@@ -1,7 +1,9 @@
-"""API que o n8n chama. Uma chamada = uma peça.
+"""A API do gerador. Uma chamada = uma peça.
 
-O n8n fica com as pontas (webhook da entrevista, aprovação humana, entrega,
-credencial do Gotenberg); o miolo — que precisa de teste — mora aqui.
+Quem chama hoje é o n8n, mas nada aqui depende disso: o Base44 ou qualquer
+cliente HTTP serve. O n8n fica com as PONTAS — webhook da entrevista, aprovação
+humana, entrega — e o miolo, que precisa de teste, mora aqui. A credencial do
+Gotenberg saiu de lá: ver `app/pdf.py`.
 
     uvicorn app.servico:app --host 0.0.0.0 --port 8100
 """

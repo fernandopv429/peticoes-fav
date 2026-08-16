@@ -1,7 +1,13 @@
-"""HTML -> PDF pelo workflow do n8n que detém a credencial do Gotenberg.
+"""HTML -> PDF pelo Gotenberg.
 
-O Python não fala com o Gotenberg direto de propósito: a Basic auth mora no n8n
-e não precisa sair de lá.
+O Python fala com o Gotenberg DIRETO, com a Basic auth em variável de ambiente.
+Antes passava pelo webhook do n8n só para a senha não sair de lá — mas cada peça
+faz três renderizações, então eram seis saltos de rede por peça para esconder
+algo que `GOTENBERG_PASSWORD` esconde igual. Direto mede 2x mais rápido, com as
+mesmas 16 páginas e o mesmo texto, e o erro do Gotenberg chega legível.
+
+Sem `GOTENBERG_USER` no ambiente, cai no webhook do n8n — rede de segurança para
+a migração não quebrar produção antes de a credencial estar no painel.
 
 TIMBRADO — medido no `.docx` da especialista (`Feita pela especialista.docx`):
 
