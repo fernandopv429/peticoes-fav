@@ -99,7 +99,7 @@ curl -s https://peticoes.nexusdevhub.com/health
 Resposta esperada — os quatro booleanos dizem quais credenciais chegaram:
 
 ```json
-{"status":"ok","versao":"0.8.0","ia":true,"cct":true,"pocketbase":true,"autenticado":true}
+{"status":"ok","versao":"0.8.1","ia":true,"cct":true,"pocketbase":true,"autenticado":true}
 ```
 
 Qualquer `false` é variável de ambiente faltando. `"autenticado":false` é o mais
