@@ -60,8 +60,8 @@ def test_redigir_ia_vem_ligado_por_padrao():
 
 
 # --- entrega do PDF ---------------------------------------------------------
-# Base64 dentro do JSON obriga o n8n a decodificar num nó Code e infla o corpo
-# em ~33%. Com `Accept: application/pdf` o nó HTTP já recebe binário.
+# Base64 dentro do JSON obriga o cliente a decodificar e infla o corpo em
+# ~33%. Com `Accept: application/pdf` o cliente recebe o binário direto.
 
 def _resp(pdf=b"%PDF-1.4 fake", **extra):
     from unittest.mock import Mock

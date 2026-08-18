@@ -11,7 +11,7 @@ o registro `6a7a00a5045fd0690aaaf3dc` contradiz o formulário assinado
 
     python scripts/gerar_marcos.py            # sem IA: só a estrutura
     python scripts/gerar_marcos.py --ia       # com redação (custa 1 chamada Opus)
-    python scripts/gerar_marcos.py --ia --pdf # e converte pelo n8n
+    python scripts/gerar_marcos.py --ia --pdf # e converte pelo Gotenberg
 """
 import sys
 import pathlib

@@ -1,6 +1,6 @@
 # API — Gerador de Petições FAV
 
-`https://peticoes.nexusdevhub.com` · versão 0.7.0
+`https://peticoes.nexusdevhub.com` · versão 0.8.0
 
 Uma chamada = uma petição inicial trabalhista, do formulário assinado ao PDF.
 
@@ -13,7 +13,7 @@ assim, ver [`README.md`](README.md).
 
 - [Autenticação](#autenticação)
 - [`GET /health`](#get-health)
-- [`POST /peca/da-entrevista`](#post-pecada-entrevista) — **o endpoint do webhook**
+- [`POST /peca/da-entrevista`](#post-pecada-entrevista) — **o endpoint principal**
   - [Opções da requisição](#opções-da-requisição)
   - [Campos da entrevista — referência completa](#campos-da-entrevista--referência-completa)
   - [Campos coletados que o motor ignora](#campos-coletados-que-o-motor-ignora)
@@ -57,7 +57,7 @@ curl -s https://peticoes.nexusdevhub.com/health
 ```json
 {
   "status": "ok",
-  "versao": "0.7.0",
+  "versao": "0.8.0",
   "ia": true,
   "cct": true,
   "pocketbase": true,
@@ -79,20 +79,22 @@ diagnóstico de "por que a peça saiu sem CCT?" sem abrir shell.
 
 ## `POST /peca/da-entrevista`
 
-**É este que o webhook do n8n deve chamar.** Recebe o registro da entidade
-`Entrevista` do app Base44 `6a734d6c72c1f853994b8733`, cru, sem transformação.
+**É o endpoint principal do backend.** Recebe os campos do formulário da
+entrevista, crus, sem transformação. Os nomes dos campos (`RECL_NOME`,
+`RECL1_CNPJ` etc.) seguem o formato do formulário — nomes herdados do Base44,
+que foi só a fonte do formato; o backend não depende do Base44 em runtime.
 
-Não monte o `caso` no workflow. A tradução formulário → caso tem regra jurídica
+Não monte o `caso` no cliente. A tradução formulário → caso tem regra jurídica
 dentro — desvio × acúmulo depende da função, o adicional noturno sai da
 sobreposição do horário com a faixa 22h–5h, as faixas ("5 a 6", "R$ 180 a
 R$ 200") têm critério próprio de arredondamento — e mora em `app/entrevista.py`,
-com teste. Reescrita em expressão de nó, desanda calada.
+com teste. Reescrita fora do backend, desanda calada.
 
-No n8n, o corpo é:
+O corpo é:
 
 ```json
 {
-  "entrevista": {{ JSON.stringify($json) }},
+  "entrevista": {...},
   "redigir_ia": true,
   "gerar_pdf": true,
   "persistir": true
@@ -103,7 +105,7 @@ No n8n, o corpo é:
 
 | campo | tipo | padrão | |
 |---|---|---|---|
-| `entrevista` | objeto | — | **obrigatório.** O registro do Base44 inteiro. Campo desconhecido é ignorado sem erro |
+| `entrevista` | objeto | — | **obrigatório.** O formulário da entrevista inteiro. Campo desconhecido é ignorado sem erro |
 | `codigo` | string | `entrevista.id` | Id do caso. Reenviar o mesmo **atualiza** a peça em vez de criar outra. Sem `id`, cai para `CPF-data_rescisão` |
 | `salario` | string | — | Sobrepõe o `SALARIO` do formulário. Aceita `"R$ 2.148,22"` ou `"2148.22"` |
 | `municipio` | string | município da prestação | Filtra a CCT. Derivado de `RECL2_ENDCOMPL` (ou `RECL1_ENDCOMPL` se não há tomadora) |
@@ -361,9 +363,8 @@ Mande `Accept: application/pdf` e a resposta é o arquivo, não JSON:
 curl -s --max-time 900 -X POST https://peticoes.nexusdevhub.com/peca/da-entrevista -H "X-API-Key: $CHAVE" -H "Content-Type: application/json" -H "Accept: application/pdf" -d @caso.json -o peticao.pdf
 ```
 
-No n8n é o caminho certo: o nó HTTP já entrega um item binário, pronto para
-anexar ou salvar, sem nó Code para decodificar base64 — que ainda infla o corpo
-em ~33%.
+É o caminho certo para o cliente: a resposta já vem como binário, pronto para
+anexar ou salvar, sem decodificar base64 — que ainda infla o corpo em ~33%.
 
 Os metadados vão em cabeçalhos, para não se perderem na troca:
 

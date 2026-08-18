@@ -1,7 +1,6 @@
 # Mesmo padrão da cct-api, que já roda no Coolify.
 # Chromium NÃO é instalado aqui de propósito: o PDF é gerado pelo Gotenberg,
-# chamado via webhook do n8n (que detém a credencial Basic auth). Isso mantém a
-# imagem em ~200 MB em vez de ~800 MB.
+# um serviço à parte. Isso mantém a imagem em ~200 MB em vez de ~800 MB.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \

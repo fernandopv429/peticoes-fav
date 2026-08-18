@@ -1,13 +1,8 @@
 """HTML -> PDF pelo Gotenberg.
 
-O Python fala com o Gotenberg DIRETO, com a Basic auth em variável de ambiente.
-Antes passava pelo webhook do n8n só para a senha não sair de lá — mas cada peça
-faz três renderizações, então eram seis saltos de rede por peça para esconder
-algo que `GOTENBERG_PASSWORD` esconde igual. Direto mede 2x mais rápido, com as
-mesmas 16 páginas e o mesmo texto, e o erro do Gotenberg chega legível.
-
-Sem `GOTENBERG_USER` no ambiente, cai no webhook do n8n — rede de segurança para
-a migração não quebrar produção antes de a credencial estar no painel.
+O backend fala com o Gotenberg direto, com a Basic auth em variável de ambiente
+(`GOTENBERG_URL`, `GOTENBERG_USER`, `GOTENBERG_PASSWORD`). Sem elas, gerar PDF
+falha com erro claro — não há caminho alternativo escondido.
 
 TIMBRADO — medido no `.docx` da especialista (`Feita pela especialista.docx`):
 
@@ -46,13 +41,10 @@ import pathlib
 
 import httpx
 
-WEBHOOK = os.environ.get(
-    "N8N_PDF_WEBHOOK", "https://n8n.nexusdevhub.com/webhook/fav-html-para-pdf")
-
-# Caminho direto. Com credencial, o n8n sai do meio: cada peça faz TRÊS
-# renderizações, então eram seis saltos de rede por peça (Python -> n8n ->
-# Gotenberg e a volta, três vezes) só para esconder uma senha que a variável de
-# ambiente esconde igual. Sem credencial, cai no webhook do n8n.
+# O backend fala com o Gotenberg direto. Gotenberg é infraestrutura — um
+# conversor HTML->PDF —, não orquestração: é dependência de mesma natureza que o
+# PocketBase ou a API de CCT. Cada peça faz TRÊS renderizações (capa, miolo,
+# faixa do rodapé), montadas num documento só.
 GOTENBERG_URL = os.environ.get("GOTENBERG_URL", "").rstrip("/")
 GOTENBERG_USER = os.environ.get("GOTENBERG_USER", "")
 GOTENBERG_SENHA = os.environ.get("GOTENBERG_PASSWORD", "")
@@ -118,16 +110,16 @@ VAZIO = '<div style="font-size:8px;"></div>'
 
 def _render(html: str, cabecalho: str, rodape: str, nome: str, timeout: float,
             *, margens: dict[str, str] | None = None) -> bytes:
-    """Uma renderização: direto no Gotenberg quando há credencial, senão pelo n8n."""
-    if GOTENBERG_URL and GOTENBERG_USER:
-        return _render_gotenberg(html, cabecalho, rodape, timeout, margens or MARGEM)
-    return _render_n8n(html, cabecalho, rodape, nome, timeout, margens or MARGEM)
+    """Uma renderização no Gotenberg.
 
-
-def _render_gotenberg(html: str, cabecalho: str, rodape: str, timeout: float,
-                      margens: dict[str, str]) -> bytes:
-    """Os NOMES dos arquivos são o contrato do Gotenberg: ele só reconhece o
-    corpo como `index.html` e o timbrado como `header.html`/`footer.html`."""
+    Os NOMES dos arquivos são o contrato do Gotenberg: ele só reconhece o corpo
+    como `index.html` e o timbrado como `header.html`/`footer.html`.
+    """
+    if not (GOTENBERG_URL and GOTENBERG_USER):
+        raise PdfIndisponivel(
+            "Gotenberg não configurado — defina GOTENBERG_URL, GOTENBERG_USER e "
+            "GOTENBERG_PASSWORD no ambiente do serviço")
+    margens = margens or MARGEM
     arquivos = [
         ("files", ("index.html", html.encode(), "text/html")),
         ("files", ("header.html", cabecalho.encode(), "text/html")),
@@ -153,33 +145,11 @@ def _render_gotenberg(html: str, cabecalho: str, rodape: str, timeout: float,
         raise PdfIndisponivel("Gotenberg recusou a credencial (401) — confira "
                               "GOTENBERG_USER e GOTENBERG_PASSWORD")
     if r.status_code != 200:
-        # O Gotenberg explica a falha em texto puro; repassar é melhor do que o
-        # "resposta não é PDF" genérico que o caminho pelo webhook produzia.
+        # O Gotenberg explica a falha em texto puro — repassar é o que torna o
+        # erro acionável, em vez de um "resposta não é PDF" genérico.
         raise PdfIndisponivel(f"Gotenberg respondeu {r.status_code}: {r.text[:300]}")
     if r.content[:4] != b"%PDF":
         raise PdfIndisponivel(f"resposta não é PDF: {r.content[:200]!r}")
-    return r.content
-
-
-def _render_n8n(html: str, cabecalho: str, rodape: str, nome: str, timeout: float,
-                margens: dict[str, str]) -> bytes:
-    """Caminho antigo — rede de segurança enquanto a credencial do Gotenberg
-    não estiver no ambiente do serviço."""
-    corpo = {
-        "nome": nome,
-        "index_html": base64.b64encode(html.encode()).decode(),
-        "header_html": base64.b64encode(cabecalho.encode()).decode(),
-        "footer_html": base64.b64encode(rodape.encode()).decode(),
-        "margens": margens,
-    }
-    try:
-        r = httpx.post(WEBHOOK, json=corpo, timeout=timeout)
-    except httpx.HTTPError as e:
-        raise PdfIndisponivel(f"falha ao chamar o n8n: {e}") from e
-    r.raise_for_status()
-    if r.content[:4] != b"%PDF":
-        raise PdfIndisponivel(
-            f"resposta não é PDF ({r.headers.get('content-type')}): {r.content[:200]!r}")
     return r.content
 
 

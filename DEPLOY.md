@@ -10,20 +10,18 @@ assim; este arquivo é só o operacional.
 Uma API FastAPI. Uma chamada `POST /peca/gerar` = uma petição.
 
 ```
-n8n  ──X-API-Key──▶  este serviço  ──▶  Claude (redação dos capítulos)
-                          │            ──▶  ccts.nexusdevhub.com (cláusulas da CCT)
-                          │            ──▶  Gotenberg (HTML→PDF, 3 renderizações)
-                          └──────────────▶  db.nexusdevhub.com (PocketBase: HTML + PDF)
+o cliente  ──X-API-Key──▶  este serviço  ──▶  Claude (redação dos capítulos)
+                                │            ──▶  ccts.nexusdevhub.com (cláusulas da CCT)
+                                │            ──▶  Gotenberg (HTML→PDF, 3 renderizações)
+                                └──────────────▶  db.nexusdevhub.com (PocketBase: HTML + PDF)
 ```
 
 O Chromium **não** entra na imagem: quem converte para PDF é o Gotenberg. Por
 isso a imagem tem ~200 MB e o build leva ~15 s.
 
-O Python fala com o Gotenberg **direto**. Antes passava pelo webhook do n8n só
-para guardar a Basic auth — e como cada peça faz três renderizações, eram seis
-saltos de rede por peça para esconder uma senha que `GOTENBERG_PASSWORD`
-esconde igual. Sem essa variável, ele volta a usar o webhook: a migração não
-quebra produção enquanto a credencial não estiver no painel.
+O Python fala com o Gotenberg **direto**, guardando a Basic auth em
+`GOTENBERG_USER`/`GOTENBERG_PASSWORD`. Sem essas variáveis não há fallback: a
+conversão falha com erro claro e a peça em HTML fica salva para reconverter.
 
 | | |
 |---|---|
@@ -50,7 +48,7 @@ quebra produção enquanto a credencial não estiver no painel.
    git remote add origin git@github.com:SEU-ORG/peticoes-fav.git && git push -u origin master
    ```
 
-2. **Gere a chave da API** que o n8n vai usar:
+2. **Gere a chave da API** que o cliente vai usar:
 
    ```bash
    openssl rand -hex 32
@@ -81,7 +79,6 @@ quebra produção enquanto a credencial não estiver no painel.
    GOTENBERG_URL=http://72.60.61.18:3000
    GOTENBERG_USER=
    GOTENBERG_PASSWORD=
-   N8N_PDF_WEBHOOK=https://n8n.nexusdevhub.com/webhook/fav-html-para-pdf
    POCKETBASE_URL=https://db.nexusdevhub.com
    POCKETBASE_TOKEN=
    ```
@@ -102,7 +99,7 @@ curl -s https://peticoes.nexusdevhub.com/health
 Resposta esperada — os quatro booleanos dizem quais credenciais chegaram:
 
 ```json
-{"status":"ok","versao":"0.4.0","ia":true,"cct":true,"pocketbase":true,"autenticado":true}
+{"status":"ok","versao":"0.8.0","ia":true,"cct":true,"pocketbase":true,"autenticado":true}
 ```
 
 Qualquer `false` é variável de ambiente faltando. `"autenticado":false` é o mais
@@ -120,47 +117,43 @@ confira a `API_KEY`.
 
 ---
 
-## Ligar o n8n
+## Chamar o backend
 
-> **Isto quebra o workflow atual.** O nó *Gerar peça (Python)* do workflow
-> `j8pll5gJgSt8ASxf` hoje chama o serviço sem cabeçalho nenhum. Depois deste
-> deploy ele passa a receber 401 até você adicionar a chave.
-
-No nó *Gerar peça (Python)*:
+Qualquer cliente HTTP faz `POST` em `/peca/da-entrevista`:
 
 - **URL**: `https://peticoes.nexusdevhub.com/peca/da-entrevista`
-- **Headers**: `X-API-Key` = o valor de `API_KEY` (guarde como credencial do
-  n8n, não em texto no nó)
+- **Headers**: `X-API-Key` = o valor de `API_KEY` (guarde como segredo, não em
+  texto claro)
 - **Timeout**: `600000` (10 min). Uma peça completa leva 2–4 min — uma chamada
-  ao Opus mais três renderizações no Gotenberg. Com o padrão a execução morre
-  no meio e o n8n reporta falha de uma peça que ficou pronta.
+  ao Opus mais três renderizações no Gotenberg. Com um timeout curto a chamada
+  morre no meio e o cliente reporta falha de uma peça que ficou pronta.
 
-Corpo — o registro do Base44 **como veio**, sem traduzir nada:
+Corpo — os campos do formulário da entrevista **como vieram**, sem traduzir nada:
 
 ```json
 {
-  "entrevista": {{ JSON.stringify($json) }},
+  "entrevista": {...},
   "redigir_ia": true,
   "gerar_pdf": true,
   "persistir": true
 }
 ```
 
-Não monte o `caso` no workflow. A tradução formulário → caso tem regra jurídica
+Não monte o `caso` no cliente. A tradução formulário → caso tem regra jurídica
 dentro — desvio x acúmulo depende da função, o adicional noturno sai da
 sobreposição do horário com a faixa 22h–5h, as faixas ("5 a 6", "R$ 180 a
 R$ 200") têm critério próprio de arredondamento — e ela mora em
-`app/entrevista.py`, com teste. Reescrita em expressão de nó, desanda calada.
+`app/entrevista.py`, com teste. Reescrita fora do backend, desanda calada.
 
 Os dois endpoints existem:
 
 | endpoint | recebe | quando usar |
 |---|---|---|
-| `/peca/da-entrevista` | o formulário cru | **o webhook** — é o caminho normal |
+| `/peca/da-entrevista` | o formulário cru | **o caminho normal** |
 | `/peca/gerar` | um `Caso` já montado | reprocessar caso corrigido à mão |
 
 O `codigo` sai do `id` do registro quando você não manda um: reenviar o mesmo
-webhook atualiza a peça em vez de criar uma segunda.
+formulário atualiza a peça em vez de criar uma segunda.
 
 **Salário.** O formulário assinado não coleta salário. Sem `SALARIO` no
 registro, o serviço usa o piso da CCT **casado com o cargo** — para "Vigilante",
@@ -179,9 +172,9 @@ de cada falta. Vale mandar para a especialista junto com a peça:
 ]
 ```
 
-**Para receber o PDF no n8n**, mande `Accept: application/pdf` no nó HTTP. A
-resposta vem como binário pronto para anexar ou salvar, sem nó Code para
-decodificar, e os metadados vêm em cabeçalhos:
+**Para receber o PDF**, mande `Accept: application/pdf` na requisição. A
+resposta vem como binário pronto para anexar ou salvar, sem decodificar nada,
+e os metadados vêm em cabeçalhos:
 
 ```
 Content-Disposition: attachment; filename="MARCOS.pdf"
@@ -199,18 +192,13 @@ infla o corpo em ~33% e obriga a decodificar: prefira o `Accept`.
 Se o gate barrar a peça não há PDF, e aí o `Accept: application/pdf` responde
 **409** com o JSON do problema, em vez de 200 com corpo vazio.
 
-### Ler a resposta sem quebrar a execução
+### Ler a resposta com segurança
 
-Campo ausente numa expressão do n8n mata a execução inteira. Use encadeamento
-opcional:
-
-```
-{{ $json?.status === 'redigido' }}
-```
-
-`status` vem `"redigido"` quando o gate aprovou e `"erro"` quando barrou — e
-nesse caso `validacao.problemas` diz o quê. `pdf_erro` e `persistencia_erro` só
-aparecem quando algo falhou; a peça em si continua na resposta.
+Para encadear uma leitura do JSON, use acesso opcional aos campos — alguns só
+aparecem em certos estados. `status` vem `"redigido"` quando o gate aprovou e
+`"erro"` quando barrou — e nesse caso `validacao.problemas` diz o quê. `pdf_erro`
+e `persistencia_erro` só aparecem quando algo falhou; a peça em si continua na
+resposta.
 
 ---
 
@@ -254,14 +242,14 @@ set -a && . ./.env && set +a && .venv/bin/python scripts/gerar_marcos.py --ia --
 | Sintoma | Causa |
 |---|---|
 | `503 API_KEY não configurada` | faltou a variável no Coolify. É a falha desejada: fecha em vez de abrir |
-| `401` vindo do n8n | header `X-API-Key` ausente ou com valor diferente do painel |
+| `401` na chamada | header `X-API-Key` ausente ou com valor diferente do painel |
 | `"ia":false` no `/health` | `ANTHROPIC_API_KEY` não chegou ao container |
 | Peça sem cláusula de CCT | `"cct":false`, ou a categoria não foi resolvida — o `trace` da resposta diz por quê |
 | `pdf_erro` na resposta | o Gotenberg não respondeu; a peça em HTML está salva e dá para reconverter |
 | PDF em Letter, paginação errada | `paperWidth`/`paperHeight` ausentes — o padrão do Gotenberg é Letter, não A4 |
 | Build falha em `test -f templates/...` | os assets do timbrado não foram versionados. São eles que desenham o logo e a faixa do rodapé |
 | Timbrado errado nas páginas 2+ | `pypdf` não instalou. Sem ele o `pdf.py` cai num fallback silencioso e repete a capa em todas as páginas |
-| Execução do n8n morre aos 2 min | timeout do nó HTTP; suba para 600000 |
+| A chamada morre aos 2 min | timeout do cliente HTTP; suba para 600000 |
 
 Logs: **Application → Logs** no Coolify. Rollback: **Deployments** → o deploy
 anterior → **Rollback** (a imagem antiga fica guardada).
@@ -273,7 +261,7 @@ anterior → **Rollback** (a imagem antiga fica guardada).
 - [ ] `API_KEY` definida e o `curl` sem chave respondendo 401
 - [ ] Token do PocketBase de **serviço**, com validade longa — o atual expira em
       09/08/2026 e não é renovável
-- [ ] Rotacionar as credenciais que já circularam em conversa (n8n, CCT,
+- [ ] Rotacionar as credenciais que já circularam em conversa (API_KEY, CCT,
       Anthropic, PocketBase)
 - [ ] Revisar a lista de municípios do TRT-2 em `app/competencia.py` — é a única
       tabela do projeto que ninguém do jurídico conferiu ainda

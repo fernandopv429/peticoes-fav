@@ -1,6 +1,6 @@
 """O endpoint que recebe o formulário do Base44 cru.
 
-Existe para o n8n não reimplementar o adaptador em expressão de nó. Estes
+Existe para o cliente não reimplementar o adaptador. Estes
 testes garantem que ele não passe a exigir tradução por fora.
 """
 import pytest
@@ -51,8 +51,8 @@ def post(cliente, **extra):
 
 
 def test_aceita_o_formulario_cru_sem_traducao(cliente):
-    """O n8n manda o registro do Base44 como veio. Se este teste exigir
-    tradução, a regra jurídica do adaptador vazou para o workflow."""
+    """O cliente manda o registro como veio. Se este teste exigir tradução, a
+    regra jurídica do adaptador vazou para fora do backend."""
     r = post(cliente, salario="R$ 2.148,22")
     assert r.status_code == 200, r.text
     assert r.json()["codigo"] == MARCOS["id"]
@@ -70,7 +70,7 @@ def test_entrevista_sem_nome_e_422(cliente):
 
 
 def test_codigo_default_e_o_id_do_registro(cliente):
-    """Idempotência: reenviar o mesmo webhook atualiza a peça, não duplica."""
+    """Idempotência: reenviar o mesmo caso atualiza a peça, não duplica."""
     assert post(cliente, salario="R$ 1,00").json()["codigo"] == MARCOS["id"]
 
 

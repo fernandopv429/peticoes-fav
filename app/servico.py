@@ -1,9 +1,10 @@
 """A API do gerador. Uma chamada = uma peça.
 
-Quem chama hoje é o n8n, mas nada aqui depende disso: o Base44 ou qualquer
-cliente HTTP serve. O n8n fica com as PONTAS — webhook da entrevista, aprovação
-humana, entrega — e o miolo, que precisa de teste, mora aqui. A credencial do
-Gotenberg saiu de lá: ver `app/pdf.py`.
+Este é o backend, e só ele: recebe os dados de uma entrevista por HTTP e
+devolve a petição. Não conhece quem o chama — um formulário, um script, o que
+for — nem depende de nenhum orquestrador. Suas dependências são de
+infraestrutura: Claude (redação), a API de CCT, o Gotenberg (PDF) e o
+PocketBase (estado). Cada uma numa variável de ambiente.
 
     uvicorn app.servico:app --host 0.0.0.0 --port 8100
 """
@@ -30,11 +31,11 @@ logger = logging.getLogger(__name__)
 # Suba a cada mudança de contrato da API: é por `/health` que se sabe qual
 # build está no ar. Com a versão parada, um deploy que não aconteceu é
 # indistinguível de um que aconteceu.
-app = FastAPI(title="FAV — Gerador de Petições", version="0.7.0")
+app = FastAPI(title="FAV — Gerador de Petições", version="0.8.0")
 
-# Chave compartilhada com o n8n. O serviço fica numa URL pública do Coolify e
-# cada chamada gasta uma requisição Opus e grava dados de cliente no
-# PocketBase — sem isso, qualquer um na internet dispara as duas coisas.
+# Chave que o cliente envia no header X-API-Key. O serviço fica numa URL pública
+# do Coolify, e cada chamada gasta uma requisição Opus e grava dados de cliente
+# no PocketBase — sem isso, qualquer um na internet dispara as duas coisas.
 API_KEY = os.environ.get("API_KEY", "")
 
 
@@ -62,7 +63,7 @@ class PedidoGerar(BaseModel):
     persistir: bool = True
     incluir_pdf_base64: bool = Field(
         False, description="Devolve o PDF no corpo da resposta. Sem isso ele vai "
-                           "só para o PocketBase, e o n8n o busca de lá.")
+                           "só para o PocketBase, de onde o cliente o busca depois.")
     blocos: Optional[dict[str, str]] = Field(
         None, description="Capítulos narrativos prontos. Sobrepõem os da IA — "
                           "é por aqui que a revisão da especialista volta.")
@@ -97,9 +98,9 @@ def _entregar(request: Request, resposta: dict[str, Any],
               pdf_bytes: Optional[bytes], codigo: str):
     """JSON por padrão; o PDF cru quando o cliente pede `Accept: application/pdf`.
 
-    Devolver o PDF em base64 dentro do JSON obriga o n8n a decodificar num nó
-    Code e infla o corpo em ~33%. Com o binário, o nó HTTP já entrega um item
-    binário pronto para anexar ou salvar.
+    Devolver o PDF em base64 dentro do JSON obriga o cliente a decodificá-lo e
+    infla o corpo em ~33%. Com o binário, o cliente recebe o arquivo pronto para
+    anexar ou salvar.
 
     Os metadados que importam vão em cabeçalhos `X-`, senão trocar JSON por PDF
     perderia o valor da causa, o gate e o id do registro.
@@ -126,19 +127,20 @@ def _entregar(request: Request, resposta: dict[str, Any],
 
 
 class PedidoEntrevista(BaseModel):
-    """O formulário do app Base44, cru, como o webhook o recebe.
+    """O formulário da entrevista, cru — nos nomes de campo herdados do app
+    Base44, que foi só a fonte do formato; nada aqui depende dele em runtime.
 
-    Existe para o n8n NÃO precisar traduzir formulário -> Caso: essa tradução
+    Existe para o CLIENTE não precisar traduzir formulário -> Caso: essa tradução
     tem regra jurídica dentro (desvio x acúmulo, noturno por sobreposição de
     horário, extremo conservador das faixas) e mora em `app/entrevista.py`,
-    onde tem teste. Repetida em expressão de nó, ela desanda em silêncio.
+    onde tem teste. Reimplementada fora do backend, ela desanda em silêncio.
     """
     entrevista: dict[str, Any] = Field(
         ..., description="Registro da entidade `Entrevista` (RECL_NOME, FUNCAO, "
                          "DATA_ADMISSAO, tipo_dispensa, ...), sem transformação.")
     codigo: Optional[str] = Field(
-        None, description="Id do caso. Vazio, usa o `id` do registro do Base44 — "
-                          "é o que dá idempotência ao reenvio do webhook.")
+        None, description="Id do caso. Vazio, usa o `id` do registro de origem "
+                          "— é o que dá idempotência ao reenvio.")
     salario: Optional[str] = Field(
         None, description="Sobrepõe o SALARIO do formulário (ex.: 'R$ 2.148,22'). "
                           "Sem nenhum dos dois, usa o piso da CCT da categoria.")
@@ -154,7 +156,7 @@ class PedidoEntrevista(BaseModel):
 
 @app.post("/peca/da-entrevista", dependencies=[Depends(autorizar)])
 def peca_da_entrevista(p: PedidoEntrevista, request: Request):
-    """Formulário do Base44 -> peça. É este que o webhook do n8n deve chamar."""
+    """Formulário da entrevista -> peça. É o endpoint principal do backend."""
     e = p.entrevista
     if not e.get("RECL_NOME"):
         raise HTTPException(422, "entrevista sem RECL_NOME")
@@ -165,7 +167,7 @@ def peca_da_entrevista(p: PedidoEntrevista, request: Request):
     except (KeyError, ValueError, TypeError) as exc:
         raise HTTPException(422, f"entrevista não convertível: {exc}") from exc
 
-    # Sem `codigo` explícito, o id do registro — reenviar o mesmo webhook
+    # Sem `codigo` explícito, o id do registro — reenviar o mesmo caso
     # atualiza a peça em vez de criar uma segunda.
     codigo = p.codigo or e.get("id") or f"{e.get('RECL_CPF', 'SEM-CPF')}-{caso.rescisao}"
 

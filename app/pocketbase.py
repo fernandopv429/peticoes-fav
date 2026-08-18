@@ -37,7 +37,7 @@ def buscar_por_codigo(codigo: str) -> Optional[dict[str, Any]]:
 
 def salvar(codigo: str, dados: dict[str, Any]) -> dict[str, Any]:
     """Cria ou atualiza pelo `codigo`. O índice único garante idempotência —
-    reenvio do webhook não duplica o caso."""
+    reenvio do mesmo caso não duplica."""
     corpo = {k: (json.dumps(v, default=str) if isinstance(v, (dict, list)) else v)
              for k, v in dados.items()}
     corpo["codigo"] = codigo

@@ -1,12 +1,13 @@
 # Petições FAV — motor de geração de peças trabalhistas
 
 Gera petição inicial trabalhista a partir da entrevista padronizada do escritório
-FAV Advogados. Orquestrado pelo n8n (Nexus), com o miolo determinístico em Python.
+FAV Advogados. Backend autônomo em Python: recebe os dados de uma entrevista por
+HTTP e devolve a petição em PDF. Não depende de orquestrador externo.
 
 Substitui/consolida o que hoje está espalhado entre os apps Base44
 `6a5a44d24aa52c9fbdd61b1a` (HTML→DOCX) e `6a6526d39fede1a2a7a8c5a4` (docxtemplater).
 
-> **Referência da API: [`API.md`](API.md).**  ·  **Subir no Coolify e ligar no n8n: [`DEPLOY.md`](DEPLOY.md).**
+> **Referência da API: [`API.md`](API.md).**  ·  **Subir no Coolify: [`DEPLOY.md`](DEPLOY.md).**
 > Este arquivo registra *por que* o motor é assim; o outro é o operacional.
 
 ---
@@ -34,20 +35,25 @@ prosa daquele app ser boa.
 | Cálculo das verbas | Python, com teste contra gabarito | Cópias divergentes de `mathUtils` já causaram bug real em peça gerada |
 | Estrutura da peça | Poda determinística por flag | A IA decidindo estrutura já fez sair peça sem Súmula 331 tendo tomadora |
 
-## Fronteira n8n × Python
+## Fronteira: o backend × quem o chama
 
-| n8n (orquestra) | Python (decide) |
+O backend decide o **mérito**; quem o chama cuida das **pontas**.
+
+| Dentro do backend (decide) | Fora do backend (a cargo do cliente/front) |
 |---|---|
-| Webhook da entrevista | Extração estruturada |
-| Chamada à API de CCT | Cálculo das verbas |
-| Chamada ao Claude | Poda de capítulos por flag |
-| Fila, retry, log | Injeção no template HTML |
-| Aprovação humana | Gate de validação |
+| Extração estruturada da entrevista | Coletar o formulário da entrevista |
+| Cálculo das verbas | Aprovação humana |
+| Consulta à API de CCT | Entrega ao cliente |
+| Redação com IA (Claude) | |
+| Poda de capítulos por flag | |
+| Injeção no template HTML | |
+| Gate de validação | |
 | Gotenberg → PDF | |
-| Entrega | |
+| Persistência (PocketBase) | |
 
-O cálculo **não** vai em Code node: seria mais uma cópia da fórmula, e a divergência
-entre cópias já produziu peça com 3% no corpo e 2% no rol de pedidos.
+O cálculo **não** deve ser reimplementado por quem chama: seria mais uma cópia da
+fórmula, e a divergência entre cópias já produziu peça com 3% no corpo e 2% no rol
+de pedidos.
 
 ## Calibragem contra as peças reais (2026-08-09)
 
@@ -108,39 +114,17 @@ os dois pontos em que aquela peça tem erro de conta.
 | Intervalo art. 71 · 10 min cl. 33ª | | | −3% · −2% |
 | Adicional noturno | | | −12% |
 
-## Workflows no n8n (Nexus)
-
-| Workflow | ID | Papel |
-|---|---|---|
-| **FAV — Gerar Petição (orquestração)** | `j8pll5gJgSt8ASxf` | `POST /webhook/fav-peticao` — recebe a entrevista, chama o serviço Python, responde |
-| **FAV — HTML para PDF (Gotenberg)** | `FAmAf2vtpeCOtIkE` | `POST /webhook/fav-html-para-pdf` — detém a credencial Basic auth do Gotenberg |
-
-O de orquestração distingue **três** desfechos, e a diferença importa:
-
-| Desfecho | Resposta |
-|---|---|
-| Entrada incompleta | `campos_faltando: [...]` — não chega a processar |
-| Serviço Python fora | `serviço de geração indisponível` |
-| Gate reprovou | `bloqueios: [{codigo, detalhe}]` |
-
-Confundir "serviço fora" com "gate reprovou" mandaria a especialista caçar
-problema de validação onde há problema de infra — por isso são mensagens
-distintas.
-
-> ⚠️ **`$env` é bloqueado nas expressões do n8n** (`access to env vars denied`).
-> A URL do serviço está fixa no nó *Gerar peça (Python)* — editar lá após o deploy.
-
 ## Deploy
 
 `Dockerfile` no padrão da `cct-api` (que já roda no Coolify). Porta **8100**.
-Chromium **não** entra na imagem: o PDF vem do Gotenberg, via webhook do n8n.
+Chromium **não** entra na imagem: o PDF vem do Gotenberg, chamado direto pelo serviço.
 Env necessárias: `ANTHROPIC_API_KEY`, `CCT_API_KEY`, `POCKETBASE_TOKEN`
-(`N8N_PDF_WEBHOOK`, `CCT_API_URL`, `POCKETBASE_URL` têm default).
+(`CCT_API_URL`, `POCKETBASE_URL`, `GOTENBERG_URL` têm default).
 
 ## Fluxo
 
 ```
-[webhook entrevista]
+[entrada: entrevista via HTTP]
   → extrair            → caso.json
   → consultar CCT       (ccts.nexusdevhub.com, já em produção)
   → calcular            verbas + flags + valor da causa
@@ -168,7 +152,7 @@ Logo entra como data-URI base64, para não depender de arquivo externo.
 |---|---|---|
 | API de CCT (pgvector, 17 CCTs / 1499 cláusulas) | `https://ccts.nexusdevhub.com` | Em produção |
 | Gotenberg | `http://72.60.61.18:3000/forms/chromium/convert/html` | Em produção (usado pelo `fazdocs`) |
-| PocketBase | `https://db.nexusdevhub.com` | No ar. Coleções `peticoes` e `regras_aprendidas` **criadas e testadas** (índice único em `codigo` valida idempotência do webhook) |
+| PocketBase | `https://db.nexusdevhub.com` | No ar. Coleções `peticoes` e `regras_aprendidas` **criadas e testadas** (índice único em `codigo` valida idempotência da chamada de geração) |
 
 > Recriar as coleções do zero: `python scripts/setup_pocketbase.py` (idempotente).
 >
@@ -178,7 +162,6 @@ Logo entra como data-URI base64, para não depender de arquivo externo.
 > (testado com 200 mil caracteres).
 > O timbrado do FAV **não** está nas coleções `logo`/`TEMPLATE_ASSETS` — elas pertencem
 > a outros produtos. O logo sai do `01_base_Jonathan_timbrado.docx`.
-| n8n Nexus | `https://n8n.nexusdevhub.com` | 21 workflows |
 | Modelo HTML | `modelo-padrao.html` (app 6a5a44) | A importar para `templates/` |
 
 ## Fases
@@ -196,9 +179,8 @@ Logo entra como data-URI base64, para não depender de arquivo externo.
      *distância do cabeçalho* (0,42 cm) como margem superior, não a margem de texto
      (4,3 cm). Sem remover, o corpo colide com o timbrado. `preparar_html()` remove.
 
-   **Validado ponta a ponta no n8n** (workflow `FAmAf2vtpeCOtIkE`, webhook
-   `POST /webhook/fav-html-para-pdf`): o PDF do Gotenberg saiu com **0 pixels de
-   diferença** do render local. Terceiro achado, este específico do Gotenberg:
+   **Validado ponta a ponta contra o Gotenberg:** o PDF gerado saiu com **0 pixels
+   de diferença** do render local. Terceiro achado, este específico do Gotenberg:
 
    - **Em `header.html`/`footer.html`, só estilo INLINE funciona.** Bloco `<style>`
      é ignorado pelo Chromium nesses templates — na primeira tentativa o logo foi
@@ -264,16 +246,17 @@ Logo entra como data-URI base64, para não depender de arquivo externo.
    `numero_da_clausula()` lê os dois.
 3. ~~**Renderização**~~ — **FEITA.** `app/pipeline.py` encadeia tudo e
    `app/servico.py` expõe `POST /peca/gerar`. **41 testes.** Peça real gerada de ponta
-   a ponta: CCT (cláusula 64ª) → cálculo → template → gate → PDF pelo n8n.
+   a ponta: CCT (cláusula 64ª) → cálculo → template → gate → PDF pelo Gotenberg.
 
-   **Arquitetura decidida (2026-08-08): Python é dono do miolo, n8n das pontas.**
-   O n8n chama o Python **uma vez**, não cinco. Razão: o pipeline é linear, e o que
-   precisa de teste é a *sequência* — ordem errada gera peça errada tão bem quanto
-   fórmula errada. Espalhá-la em nós de workflow a deixaria sem teste, e cópias de
-   lógica em Code node repetiriam o bug do `mathUtils` divergente. O n8n mantém o que
-   só ele faz bem: webhook de entrada, **espera pela aprovação humana**, entrega
-   (Evolution/e-mail) e a **credencial do Gotenberg** — o Python chama o webhook
-   `fav-html-para-pdf` para gerar o PDF, sem mover credencial.
+   **Arquitetura decidida (2026-08-08): Python é o backend, dono do miolo; as pontas
+   — formulário, entrega — ficam com o cliente.** O cliente chama o backend **uma
+   vez**, não cinco. Razão: o pipeline é linear, e o que precisa de teste é a
+   *sequência* — ordem errada gera peça errada tão bem quanto fórmula errada.
+   Espalhá-la em etapas do lado de quem chama a deixaria sem teste, e reimplementar
+   a lógica ali repetiria o bug do `mathUtils` divergente. Fica com o cliente só o
+   que é dele: coletar a entrada, **a aprovação humana** e a entrega ao cliente
+   (Evolution/e-mail). O PDF é gerado pelo próprio backend, chamando o Gotenberg
+   direto.
 
    Gate de validação (`app/render/preencher.py`) — cada checagem nasceu de um erro
    real: `{{}}` cru no corpo · JSON/markdown da IA vazando · valor da causa ≠ soma
@@ -312,16 +295,17 @@ Logo entra como data-URI base64, para não depender de arquivo externo.
       3.220,00 / 1.600,00) — a especialista **arbitra**, não calcula. Logo:
       - **Principal por hora** (HE, art. 71, noturno, DSR, domingos, minutos) →
         **IA estima**, rotulado "estimado". Replica a prática real, não é remendo.
-      - **Reflexos** → **código, sempre**. Percentuais do principal, medianas sobre
-        86–151 observações em **25 peças reais** (todas as 4 categorias):
+      - **Reflexos** → **código, sempre**. Percentuais do principal:
 
         | Aviso | DSR | Férias+1/3 | 13º | FGTS | Multa 40% | Total |
         |---|---|---|---|---|---|---|
-        | 4,00% | 7,25% | 7,00% | 6,00% | 8,00% | 3,20% | **35,45%** |
+        | 4,00% | 7,25% | 7,00% | 6,00% | 7,50% | 3,00% | **34,75%** |
 
-        FGTS 8,00% é a alíquota legal e 3,20% = 40% × 8% — batem entre si, o que
-        corrobora o conjunto. (Uma versão anterior deste README dizia 7,5%/3,0% e
-        total 34,75%, extraídos de **uma só** peça; o corpus corrigiu.)
+        Estes são os valores no código (`app/calculo/verbas.py`), confirmados por
+        **seis rubricas independentes** da peça real do MARCOS. Uma tentativa
+        anterior de mediana sobre o corpus deu 35,45% (FGTS 8% / multa 3,2%), mas
+        estava **poluída**: nas peças o "FGTS + 40%" aparece somado num único
+        10,5%, o que empurrava a mediana para cima. Revertido para 34,75%.
 
       - ⚠️ **O copy-paste dos reflexos é sistêmico, não exceção:** 15 blocos
         reaproveitados afetando **48 itens de pedido**. O pior usa o mesmo bloco para
@@ -351,4 +335,5 @@ Logo entra como data-URI base64, para não depender de arquivo externo.
       caem em TRT-15 com aviso `COMPETENCIA_A_CONFERIR` — **a lista precisa de
       revisão jurídica antes de produção.**
 - [ ] Confirmar que `modelo-padrao.html` é o modelo oficial vigente da banca.
-- [ ] Rotacionar os tokens do n8n (colados em chat, **sem expiração**).
+- [ ] Rotacionar as credenciais coladas em chat (n8n, CCT, Anthropic, PocketBase,
+      Gotenberg, `API_KEY`) — **sem expiração**.

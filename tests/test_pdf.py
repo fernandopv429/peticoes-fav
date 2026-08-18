@@ -45,41 +45,32 @@ def test_margens_sao_as_do_documento_da_especialista():
     assert abs(float(pdf.MARGEM["bottom"]) * 25.4 - 18.0) < 0.2
 
 
-# --- caminho direto no Gotenberg -------------------------------------------
-# O n8n no meio existia só para guardar a Basic auth. Como cada peça faz TRÊS
-# renderizações, eram seis saltos de rede por peça para esconder uma senha que
-# a variável de ambiente esconde igual.
+# --- Gotenberg direto ------------------------------------------------------
+# O backend fala com o Gotenberg direto. Não há caminho alternativo: sem a
+# credencial, gerar PDF falha com erro claro.
 
 def test_a4_explicito_no_corpo_enviado():
     """O padrão do Gotenberg é LETTER. Sem paperWidth/Height a peça saía com
-    18 páginas em vez de 16 — medido contra o caminho pelo n8n."""
+    18 páginas em vez de 16."""
     from app.pdf import PAPEL_A4
     assert PAPEL_A4 == ("8.27", "11.7")
 
 
-def test_escolhe_o_caminho_pela_credencial(monkeypatch):
-    """Sem credencial do Gotenberg, cai no webhook do n8n — a migração não pode
-    quebrar produção antes de a variável existir lá."""
-    import importlib
+def test_sem_credencial_falha_claro(monkeypatch):
+    """Sem Gotenberg configurado, o erro diz exatamente o que falta — não há
+    fallback silencioso para mascarar a configuração ausente."""
+    import pytest as _pt
     import app.pdf as pdf
-    chamou = {}
     monkeypatch.setattr(pdf, "GOTENBERG_URL", "")
     monkeypatch.setattr(pdf, "GOTENBERG_USER", "")
-    monkeypatch.setattr(pdf, "_render_n8n", lambda *a, **k: chamou.setdefault("n8n", True) or b"%PDF")
-    monkeypatch.setattr(pdf, "_render_gotenberg", lambda *a, **k: chamou.setdefault("direto", True) or b"%PDF")
-    pdf._render("<p>x</p>", "", "", "x.pdf", 5)
-    assert chamou == {"n8n": True}
-
-    monkeypatch.setattr(pdf, "GOTENBERG_URL", "http://g:3000")
-    monkeypatch.setattr(pdf, "GOTENBERG_USER", "u")
-    chamou.clear()
-    pdf._render("<p>x</p>", "", "", "x.pdf", 5)
-    assert chamou == {"direto": True}
+    with _pt.raises(pdf.PdfIndisponivel) as e:
+        pdf._render("<p>x</p>", "", "", "x.pdf", 5)
+    assert "GOTENBERG_URL" in str(e.value)
 
 
 def test_401_do_gotenberg_diz_o_que_conferir(monkeypatch):
-    """Erro legível é metade do motivo de tirar o n8n do caminho: pelo webhook,
-    a falha chegava como "resposta não é PDF" e não dizia o porquê."""
+    """Erro acionável: o 401 aponta qual variável conferir, em vez de um
+    "resposta não é PDF" genérico."""
     import httpx
     import pytest as _pt
     import app.pdf as pdf
@@ -88,7 +79,7 @@ def test_401_do_gotenberg_diz_o_que_conferir(monkeypatch):
     monkeypatch.setattr(httpx, "post",
                         lambda *a, **k: httpx.Response(401, text="Unauthorized"))
     with _pt.raises(pdf.PdfIndisponivel) as e:
-        pdf._render_gotenberg("<p>x</p>", "", "", 5, pdf.MARGEM)
+        pdf._render("<p>x</p>", "", "", "x.pdf", 5, margens=pdf.MARGEM)
     assert "GOTENBERG_USER" in str(e.value)
 
 
@@ -96,8 +87,10 @@ def test_erro_do_gotenberg_e_repassado(monkeypatch):
     import httpx
     import pytest as _pt
     import app.pdf as pdf
+    monkeypatch.setattr(pdf, "GOTENBERG_URL", "http://g:3000")
+    monkeypatch.setattr(pdf, "GOTENBERG_USER", "u")
     monkeypatch.setattr(httpx, "post",
                         lambda *a, **k: httpx.Response(400, text="malformed HTML"))
     with _pt.raises(pdf.PdfIndisponivel) as e:
-        pdf._render_gotenberg("<p>x</p>", "", "", 5, pdf.MARGEM)
+        pdf._render("<p>x</p>", "", "", "x.pdf", 5, margens=pdf.MARGEM)
     assert "malformed HTML" in str(e.value)
