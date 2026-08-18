@@ -1,0 +1,65 @@
+{
+  "_comentario": "Modelo do corpo do POST /peca/da-entrevista. Troque os valores placeholder pelos reais. Com CNPJ e endereços fictícios o gate barra (competência/categoria não resolvem) — é esperado; com dados reais, aprova. Remova esta chave _comentario antes de usar.",
+  "entrevista": {
+    "RECL_NOME": "NOME COMPLETO DO RECLAMANTE",
+    "RECL_CPF": "000.000.000-00",
+    "RECL_RG": "00.000.000-0",
+    "RECL_PIS": "000.00000.00-0",
+    "RECL_CTPS": "000000",
+    "RECL_SERIE": "0000",
+    "RECL_NASC": "1990-01-01",
+    "RECL_FILIACAO": "Nome do pai e Nome da mãe",
+    "RECL_ENDERECO": "Rua, número, bairro, Cidade/UF",
+    "RECL_CEP": "00000-000",
+    "RECL_NACIONALIDADE": "brasileiro",
+    "RECL_ESTADOCIVIL": "solteiro",
+    "email": "cliente@exemplo.com",
+
+    "FUNCAO": "Vigilante",
+    "escala": "12x36",
+    "JORNADA_HORARIO": "das 19h às 07h",
+    "tem_adic_noturno": true,
+    "DATA_ADMISSAO": "2025-04-14",
+    "DATA_RESCISAO": "2025-12-07",
+    "tipo_dispensa": "sem_justa_causa",
+
+    "RECL1_NOME": "EMPREGADORA LTDA",
+    "RECL1_CNPJ": "00.000.000/0001-00",
+    "RECL1_LOGRADOURO": "Endereço da empregadora",
+    "RECL1_ENDCOMPL": "Cidade/UF, CEP 00000-000",
+
+    "RECL2_NOME": "TOMADORA (quando houver)",
+    "RECL2_CNPJ": "00.000.000/0001-00",
+    "RECL2_ENDCOMPL": "Cidade/UF, CEP 00000-000",
+
+    "finais_semana": true,
+    "intervalo_suprimido": true,
+    "INTERVALO_GOZADO": "15 a 20 minutos",
+    "media_horas_extras": "Até 1 hora",
+    "periodo_antecedente": "30 minutos",
+    "periodo_sucedente": "30 minutos",
+
+    "folgas_trabalhadas": true,
+    "FT_QTD_MEDIA": "5 a 6 por mês",
+    "VAL_FT": "R$ 180 a R$ 200",
+    "ft_pagamento": "PIX",
+
+    "vale_refeicao": true,
+    "vale_alimentacao": true,
+    "vale_transporte": true,
+
+    "acumulo_funcao": true,
+    "funcoes_acumuladas": "descrição das funções acumuladas",
+    "tem_periculosidade": true,
+    "desconto_indevido": true,
+    "desconto_qual": "descrição do desconto indevido",
+
+    "holerites": true,
+    "espelho_ponto": false,
+
+    "fatos_narrados": "Relato livre do reclamante, que ancora a redação da IA."
+  },
+  "redigir_ia": true,
+  "gerar_pdf": true,
+  "persistir": true
+}

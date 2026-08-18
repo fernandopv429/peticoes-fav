@@ -60,6 +60,7 @@ curl -s https://peticoes.nexusdevhub.com/health
   "versao": "0.8.2",
   "ia": true,
   "cct": true,
+  "gotenberg": true,
   "pocketbase": true,
   "autenticado": true
 }
@@ -69,11 +70,15 @@ curl -s https://peticoes.nexusdevhub.com/health
 |---|---|
 | `ia` | `ANTHROPIC_API_KEY` presente |
 | `cct` | `CCT_API_KEY` presente |
+| `gotenberg` | `GOTENBERG_URL` + credencial presentes — **`false` = sem PDF** |
 | `pocketbase` | `POCKETBASE_TOKEN` presente |
 | `autenticado` | `API_KEY` presente — `false` significa que a API recusa tudo |
 
 Reporta quais credenciais chegaram ao container, nunca o valor delas. É o
-diagnóstico de "por que a peça saiu sem CCT?" sem abrir shell.
+diagnóstico de "por que a peça saiu sem CCT?" sem abrir shell. `gotenberg` lê
+exatamente o que a geração de PDF vai enxergar: `true` só confirma que as
+variáveis existem — se a **senha** estiver errada, o PDF ainda falha com 409 e o
+`pdf_erro` diz "Gotenberg recusou a credencial (401)".
 
 ---
 
@@ -362,6 +367,15 @@ Mande `Accept: application/pdf` e a resposta é o arquivo, não JSON:
 ```bash
 curl -s --max-time 900 -X POST https://peticoes.nexusdevhub.com/peca/da-entrevista -H "X-API-Key: $CHAVE" -H "Content-Type: application/json" -H "Accept: application/pdf" -d @caso.json -o peticao.pdf
 ```
+
+Dois pontos que confundem no terminal:
+
+- **`-o peticao.pdf` salva em SILÊNCIO.** A curl não imprime nada e leva ~40 s
+  (IA + Gotenberg). Não travou — o arquivo aparece na pasta ao terminar. Para
+  abri-lo na hora, acrescente `&& xdg-open peticao.pdf`.
+- **`-d @caso.json` lê de um arquivo.** Se ele não existir, a curl falha com
+  "Couldn't read data". Crie o `caso.json` com `{"entrevista": {...}}` antes, ou
+  passe o JSON inline com `-d '{"entrevista": {...}}'`.
 
 É o caminho certo para o cliente: a resposta já vem como binário, pronto para
 anexar ou salvar, sem decodificar base64 — que ainda infla o corpo em ~33%.

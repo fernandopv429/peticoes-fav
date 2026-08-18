@@ -77,11 +77,19 @@ conversão falha com erro claro e a peça em HTML fica salva para reconverter.
    CCT_API_URL=https://ccts.nexusdevhub.com
    CCT_API_KEY=
    GOTENBERG_URL=http://72.60.61.18:3000
-   GOTENBERG_USER=
-   GOTENBERG_PASSWORD=
+   GOTENBERG_USER=admin
+   GOTENBERG_PASSWORD=GotenbergSeguro2026
    POCKETBASE_URL=https://db.nexusdevhub.com
    POCKETBASE_TOKEN=
    ```
+
+   **Gotenberg** — `GOTENBERG_USER`/`GOTENBERG_PASSWORD` têm que ser **a mesma
+   credencial** que o serviço do Gotenberg exige, definida lá em
+   `GOTENBERG_API_BASIC_AUTH_USERNAME`/`_PASSWORD` (ver o compose do serviço).
+   Senha divergente = PDF falha com 409 "Gotenberg recusou a credencial (401)",
+   embora a peça e o HTML saiam normalmente. O código também aceita os nomes que
+   o Coolify gera sozinho (`SERVICE_USER_GOTENBERG`/`SERVICE_PASSWORD_GOTENBERG`),
+   mas esses só valem se o Gotenberg estiver de fato usando-os.
 
 5. **Domains**: defina o domínio (ex.: `peticoes.nexusdevhub.com`). O Coolify
    emite o certificado sozinho.
@@ -96,10 +104,10 @@ conversão falha com erro claro e a peça em HTML fica salva para reconverter.
 curl -s https://peticoes.nexusdevhub.com/health
 ```
 
-Resposta esperada — os quatro booleanos dizem quais credenciais chegaram:
+Resposta esperada — os booleanos dizem quais credenciais chegaram:
 
 ```json
-{"status":"ok","versao":"0.8.2","ia":true,"cct":true,"pocketbase":true,"autenticado":true}
+{"status":"ok","versao":"0.8.2","ia":true,"cct":true,"gotenberg":true,"pocketbase":true,"autenticado":true}
 ```
 
 Qualquer `false` é variável de ambiente faltando. `"autenticado":false` é o mais
