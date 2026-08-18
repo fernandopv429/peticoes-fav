@@ -94,3 +94,30 @@ def test_erro_do_gotenberg_e_repassado(monkeypatch):
     with _pt.raises(pdf.PdfIndisponivel) as e:
         pdf._render("<p>x</p>", "", "", "x.pdf", 5, margens=pdf.MARGEM)
     assert "malformed HTML" in str(e.value)
+
+
+def test_credencial_aceita_os_nomes_do_coolify(monkeypatch):
+    """O Coolify gera SERVICE_USER/PASSWORD_GOTENBERG sozinho. Aceitar esses
+    nomes evita ter que duplicar as variáveis à mão — foi o que fez o PDF
+    falhar mesmo com tudo preenchido no painel."""
+    import importlib
+    for k in ("GOTENBERG_URL", "GOTENBERG_USER", "GOTENBERG_PASSWORD"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("SERVICE_URL_GOTENBERG", "http://gotenberg:3000")
+    monkeypatch.setenv("SERVICE_USER_GOTENBERG", "u123")
+    monkeypatch.setenv("SERVICE_PASSWORD_GOTENBERG", "p456")
+    import app.pdf as pdf
+    importlib.reload(pdf)
+    assert pdf.GOTENBERG_URL == "http://gotenberg:3000"
+    assert pdf.GOTENBERG_USER == "u123"
+    assert pdf.GOTENBERG_SENHA == "p456"
+
+
+def test_nome_do_projeto_tem_precedencia(monkeypatch):
+    """Se ambos existirem, GOTENBERG_USER ganha de SERVICE_USER_GOTENBERG."""
+    import importlib
+    monkeypatch.setenv("GOTENBERG_USER", "projeto")
+    monkeypatch.setenv("SERVICE_USER_GOTENBERG", "coolify")
+    import app.pdf as pdf
+    importlib.reload(pdf)
+    assert pdf.GOTENBERG_USER == "projeto"

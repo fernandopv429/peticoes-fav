@@ -45,9 +45,23 @@ import httpx
 # conversor HTML->PDF —, não orquestração: é dependência de mesma natureza que o
 # PocketBase ou a API de CCT. Cada peça faz TRÊS renderizações (capa, miolo,
 # faixa do rodapé), montadas num documento só.
-GOTENBERG_URL = os.environ.get("GOTENBERG_URL", "").rstrip("/")
-GOTENBERG_USER = os.environ.get("GOTENBERG_USER", "")
-GOTENBERG_SENHA = os.environ.get("GOTENBERG_PASSWORD", "")
+#
+# A credencial aceita DOIS nomes: os do projeto (GOTENBERG_USER/PASSWORD) e os
+# que o Coolify gera sozinho para o serviço (SERVICE_USER/PASSWORD_GOTENBERG).
+# Sem isto, configurar pelo painel do Coolify não bastava — os nomes não batiam
+# e o serviço via credencial vazia mesmo com tudo preenchido.
+def _env(*nomes: str, padrao: str = "") -> str:
+    for nome in nomes:
+        valor = os.environ.get(nome)
+        if valor:
+            return valor
+    return padrao
+
+
+GOTENBERG_URL = _env("GOTENBERG_URL", "SERVICE_URL_GOTENBERG",
+                     "SERVICE_FQDN_GOTENBERG").rstrip("/")
+GOTENBERG_USER = _env("GOTENBERG_USER", "SERVICE_USER_GOTENBERG")
+GOTENBERG_SENHA = _env("GOTENBERG_PASSWORD", "SERVICE_PASSWORD_GOTENBERG")
 ASSETS = pathlib.Path(__file__).resolve().parent.parent / "templates" / "assets"
 
 # Margens do documento da especialista (pgMar em twips / 1440 = polegada)

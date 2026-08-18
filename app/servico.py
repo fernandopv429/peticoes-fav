@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Suba a cada mudança de contrato da API: é por `/health` que se sabe qual
 # build está no ar. Com a versão parada, um deploy que não aconteceu é
 # indistinguível de um que aconteceu.
-app = FastAPI(title="FAV — Gerador de Petições", version="0.8.1")
+app = FastAPI(title="FAV — Gerador de Petições", version="0.8.2")
 
 # Chave que o cliente envia no header X-API-Key. O serviço fica numa URL pública
 # do Coolify, e cada chamada gasta uma requisição Opus e grava dados de cliente
@@ -78,8 +78,7 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "versao": app.version,
             "ia": bool(os.environ.get("ANTHROPIC_API_KEY")),
             "cct": bool(os.environ.get("CCT_API_KEY")),
-            "gotenberg": bool(os.environ.get("GOTENBERG_URL")
-                              and os.environ.get("GOTENBERG_USER")),
+            "gotenberg": bool(pdf_mod.GOTENBERG_URL and pdf_mod.GOTENBERG_USER),
             "pocketbase": bool(os.environ.get("POCKETBASE_TOKEN")),
             "autenticado": bool(API_KEY)}
 

@@ -1,6 +1,6 @@
 # API — Gerador de Petições FAV
 
-`https://peticoes.nexusdevhub.com` · versão 0.8.1
+`https://peticoes.nexusdevhub.com` · versão 0.8.2
 
 Uma chamada = uma petição inicial trabalhista, do formulário assinado ao PDF.
 
@@ -57,7 +57,7 @@ curl -s https://peticoes.nexusdevhub.com/health
 ```json
 {
   "status": "ok",
-  "versao": "0.8.1",
+  "versao": "0.8.2",
   "ia": true,
   "cct": true,
   "pocketbase": true,
