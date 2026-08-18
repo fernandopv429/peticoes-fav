@@ -53,7 +53,7 @@ def test_a4_explicito_no_corpo_enviado():
     """O padrão do Gotenberg é LETTER. Sem paperWidth/Height a peça saía com
     18 páginas em vez de 16."""
     from app.pdf import PAPEL_A4
-    assert PAPEL_A4 == ("8.27", "11.7")
+    assert PAPEL_A4 == ("8.27", "11.69")
 
 
 def test_sem_credencial_falha_claro(monkeypatch):

@@ -65,8 +65,9 @@ GOTENBERG_SENHA = _env("GOTENBERG_PASSWORD", "SERVICE_PASSWORD_GOTENBERG")
 ASSETS = pathlib.Path(__file__).resolve().parent.parent / "templates" / "assets"
 
 # Margens do documento da especialista (pgMar em twips / 1440 = polegada)
-# A4 em polegadas, que é a unidade do Gotenberg.
-PAPEL_A4 = ("8.27", "11.7")
+# A4 em polegadas (210 x 297 mm), a unidade do Gotenberg. 11.69 é o valor exato
+# — e o mesmo que o workflow do n8n usava, a configuração já comprovada.
+PAPEL_A4 = ("8.27", "11.69")
 
 MARGEM = {"top": "1.378", "bottom": "0.709", "left": "1.181", "right": "1.181"}
 
